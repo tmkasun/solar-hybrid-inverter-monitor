@@ -1,0 +1,97 @@
+.pin {
+    width: 25px;
+    height: 25px;
+    position: relative;
+    top: -6px;
+    left: -8px;
+    background: rgba(5, 124, 255, 1);
+    border: 2px solid rgb(255 255 255 / 46%);
+    border-radius: 50%;
+}
+
+.pin-effect {
+    width: 100px;
+    height: 100px;
+    position: absolute;
+    top: -43px;
+    left: -46px;
+    background: rgba(5, 124, 255, 0.6);
+    border-radius: 50%;
+    opacity: 0;
+    animation: pulsate 2400ms ease-out infinite;
+}
+
+.pin-notavailable {
+    width: 25px;
+    height: 25px;
+    position: relative;
+    top: -6px;
+    left: -8px;
+    background: rgb(255 5 51);
+    border: 2px solid rgb(255 255 255 / 46%);
+    border-radius: 50%;
+}
+
+.pin-notavailable-effect {
+    width: 100px;
+    height: 100px;
+    position: absolute;
+    top: -43px;
+    left: -46px;
+    background: rgb(255 5 5 / 60%);
+    border-radius: 50%;
+    opacity: 0;
+    animation: pulsate 2400ms ease-out infinite;
+}
+
+.pin-oneavailable {
+    width: 25px;
+    height: 25px;
+    position: relative;
+    top: -6px;
+    left: -8px;
+    background: rgb(255 213 5);
+    border: 2px solid rgb(255 255 255 / 46%);
+    border-radius: 50%;
+}
+
+.pin-oneavailable-effect {
+    width: 100px;
+    height: 100px;
+    position: absolute;
+    top: -43px;
+    left: -46px;
+    background: rgb(255 236 5 / 60%);
+    border-radius: 50%;
+    opacity: 0;
+    animation: pulsate 2400ms ease-out infinite;
+}
+
+@keyframes pulsate {
+    0% {
+        transform: scale(0.1);
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        transform: scale(0.3);
+        opacity: 0;
+    }
+}
+
+/* New marker */
+
+.logoGlow {
+    cursor: pointer;
+}
+
+.logoGlow:hover {
+    -webkit-border-radius: 10px;
+    -moz-border-radius: 10px;
+    border-radius: 10px;
+    -webkit-box-shadow: 0px 0px 30px 0px rgba(0, 22, 84, 0.631);
+    -moz-box-shadow: 0px 0px 30px 0px rgba(0, 22, 84, 0.631);
+    box-shadow: 0px 0px 30px 0px rgba(0, 22, 84, 0.631);
+}

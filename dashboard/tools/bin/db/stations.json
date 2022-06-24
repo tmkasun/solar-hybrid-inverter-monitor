@@ -1,0 +1,40 @@
+{
+  "posts": [
+    {
+      "id": 3,
+      "province": "WES",
+      "district": "WES003",
+      "city": "Panadura",
+      "lane": "0",
+      "longitude": "6.738501",
+      "latitude": "79.903343",
+      "phoneNumber": "0",
+      "shedName": "K.N.PERERA & SONS",
+      "fuelAvailabilityDTO": {
+        "id": 68733,
+        "shedCode": "100003",
+        "p95Capacity": 0,
+        "p92Capacity": 0,
+        "sdCapacity": 0,
+        "ikCapacity": 0,
+        "lastUpdateByShed": 1654976237000,
+        "dcapacity": 0,
+        "kcapacity": 0
+      },
+      "instituteId": 3,
+      "p92Availablity": true,
+      "p95Availablity": true,
+      "davailablity": true,
+      "sdavailablity": true,
+      "ikavailablity": true,
+      "kavailablity": true,
+      "p92Capacity": 44700,
+      "p95Capacity": 44700,
+      "dcapacity": 44700,
+      "sdcapacity": 44700,
+      "ikcapacity": 0,
+      "kcapacity": 0,
+      "shedCode": "100003"
+    }
+  ]
+}

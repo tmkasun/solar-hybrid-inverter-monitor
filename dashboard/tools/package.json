@@ -1,0 +1,20 @@
+{
+  "name": "fuel.gov.lk.scrape",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node-fetch": "^2.6.1",
+    "typescript": "^4.7.3"
+  },
+  "dependencies": {
+    "lowdb": "^3.0.0",
+    "node-fetch": "^3.2.6"
+  }
+}
