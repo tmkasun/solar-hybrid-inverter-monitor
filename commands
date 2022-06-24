@@ -1,0 +1,115 @@
+sudo apt update
+sudo lsb_release 
+sudo lsb_release -a
+sudo visudo 
+sudo apt upgrade 
+sudo lsb_release -a
+sudo reboot now
+wget -O /tmp/netdata-kickstart.sh https://my-netdata.io/kickstart.sh && sh /tmp/netdata-kickstart.sh
+/usr/libexec/netdata/netdata-updater.sh
+ll /usr/libexec/netdata/netdata-updater.sh
+/usr/libexec/netdata/netdata-updater.sh
+/usr/libexec/netdata/netdata-updater.sh 
+vim /usr/libexec/netdata/netdata-updater.sh 
+sudo systemctl status netdata.service 
+ll
+cd /etc/netdata/
+./edit-config go.d/
+ll
+ll go.d/
+./edit-config go.d.conf
+sudo ./edit-config go.d.conf
+node -v
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
+vim ~/.bashrc 
+nvm install --lts
+ll
+ifconfig 
+nmcli c
+nmcli d wifi list
+nmtui
+ifconfig 
+nmcli d wifi list
+sudo vim ~/.ssh/authorized_keys
+mkdir -p ~/.ssh
+sudo vim ~/.ssh/authorized_keys
+sudo vim /etc/ssh/sshd_config
+sudo systemctl restart sshd.service 
+node -v
+cd projects/inverter/
+ll /dev/usb
+vim check.py 
+python3 check.py 
+ll /dev/usb/hiddev0 
+vim check.py 
+python3 check.py 
+sudo chmod 777 /dev/usb/hiddev0 
+python3 check.py 
+sudo lsusb 
+ll /sys/devices/system/
+python3 check.py 
+ll /dev/tty*
+ll /dev/usb/
+cat /dev/usb/hiddev0 
+python3 check.py 
+dmesg
+ls -l /dev/hidraw
+ls -l /dev/hidraw*
+vim check.py 
+sudo chmod 777 /dev/hidraw0
+python3 check.py 
+sudo lsusb 
+sudo vim /etc/udev/rules.d/10-wifi-disable-powermanagement.rules 
+sudo vim /etc/udev/rules.d/11-wifi-disable-powermanagement.rules 
+sudo adduser user plugdev
+sudo adduser kasun plugdev
+sudo reboot 
+sudo lsusb 
+ll /dev/usb*
+sudo lsusb 
+ll /dev/tty*
+ll /dev/usb*
+sudo vim /etc/udev/rules.d/11-wifi-disable-powermanagement.rules 
+sudo rm /etc/udev/rules.d/11-wifi-disable-powermanagement.rules 
+sudo apt update
+sudo apt upgrade
+sudo reboot 
+ls -l /dev/hidraw*
+ls -l /dev/tty
+ls -l /dev/tty*
+dmesg
+dmesg | grep tty
+dmesg | grep usb
+sudo lsusb 
+sudo reboot 
+sudo lsusb 
+dmesg | grep tty
+dmesg | grep cypress
+sudo cat /etc/udev/rules.d/10-wifi-disable-powermanagement.rules 
+sudo apt update
+sudo apt upgrade 
+sudo reboot 
+ll /dev/usb*
+cd projects/inverter/
+python3 check.py 
+sudo chmod 777 /dev/hidraw0 
+python3 check.py 
+ll /dev/usb*
+cat /dev/input/event1 
+sudo cat /dev/input/event1 
+sudo cat /dev/input/event0
+eselect kernel list
+ls /sys/bus/usb-serial/devices/
+ls /sys/bus/usb/
+ls /sys/bus/usb/devices/
+ls /sys/bus/usb/devices/usb1/
+sudo insmod /lib/modules/5.10.75-sunxi64/kernel/drivers/usb/serial/cp210x.ko 
+ll /dev/usb*
+sudo apt clean all
+sudo apt dist-upgrade 
+sudo usermod kasun -a -G dialout
+sudo lsb_release 
+sudo lsb_release -a
+modinfo usbserial
+make config
+sudo reboot
