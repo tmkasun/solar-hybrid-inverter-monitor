@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 export const minMaxMap: { [key: number]: [number, number] } = {
     0: [200, 260], // GV
     1: [45, 55], // GF
-    2: [220, 240], // OV
+    2: [210, 250], // OV
     3: [45, 55], // OF
     4: [0, 2500], // OVA
     5: [0, 3000], // OPW
@@ -19,7 +19,9 @@ import { useQuery } from 'react-query';
 const API_BASE_PATH =
     'https://c65f16f4-836b-47d2-9c70-538ee54dfd7d-prod.e1-us-east-azure.choreoapis.dev/pvkl/inverter/1.0.0';
 export default function useInverterLiveStats() {
-    return useQuery(
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+    const queryData = useQuery(
         'liveStats',
         async () => {
             const response = await fetch(`${API_BASE_PATH}/live`, {
@@ -31,6 +33,7 @@ export default function useInverterLiveStats() {
             if (!response.ok) {
                 throw new Error('Unable to fetch data /final.json');
             }
+            setLastUpdated(new Date());
             return await response.json();
         },
         {
@@ -38,10 +41,12 @@ export default function useInverterLiveStats() {
             refetchInterval: 1000,
         }
     );
+    return { ...queryData, lastUpdated };
 }
 
 export function useInverterMode() {
-    return useQuery(
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+    const queryData = useQuery(
         'stats/mode',
         async () => {
             const response = await fetch(`${API_BASE_PATH}/mode`, {
@@ -53,6 +58,7 @@ export function useInverterMode() {
             if (!response.ok) {
                 throw new Error('Unable to fetch data /final.json');
             }
+            setLastUpdated(new Date());
             return await response.json();
         },
         {
@@ -60,4 +66,5 @@ export function useInverterMode() {
             refetchInterval: 1000 * 30,
         }
     );
+    return { ...queryData, lastUpdated };
 }

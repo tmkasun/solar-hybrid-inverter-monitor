@@ -43,12 +43,29 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
     const chartInst = useRef<any>(null);
     const { id, name, value, minMax } = props;
     const [min, max] = minMax;
+    const valueDiff = min + (max - min);
     const options: EChartsOption = {
         tooltip: {
             formatter: '{a} <br/>{b} : {c}%',
         },
         series: [
             {
+                axisLine: {
+                    lineStyle: {
+                        width: 6,
+                        color: [
+                            [0.25, '#FF6E76'],
+                            [0.5, '#FDDD60'],
+                            [0.75, '#58D9F9'],
+                            [1, '#7CFFB2'],
+                        ],
+                    },
+                },
+                pointer: {
+                    itemStyle: {
+                        color: 'auto',
+                    },
+                },
                 min,
                 max,
                 name: 'Pressure',
@@ -89,7 +106,7 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
         <div
             id={id}
             ref={chartRefInst}
-            style={{ width: '100%', height: '80vh' }}
+            style={{ width: '100%', height: '400px' }}
         />
     );
 };

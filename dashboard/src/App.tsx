@@ -8,6 +8,7 @@ import Gauge from './libs/Gauge';
 import Base from './libs/Base';
 import './styles.css';
 import useInverterLiveStats, { minMaxMap } from './libs/hooks/inverterStats';
+import { Skeleton } from '@mui/material';
 
 const SectionSeperator = () => (
     <Grid item sm={12}>
@@ -30,37 +31,50 @@ const SectionSeperator = () => (
  */
 
 const App = () => {
-    const [dataType, setDataType] = useState('total');
-    const [lastXDays, setLastXDays] = useState(0);
-    const { isLoading, data, isError, error } = useInverterLiveStats();
+    const { isLoading, data, isError, error, lastUpdated, isFetching } =
+        useInverterLiveStats();
 
     return (
-        <Base
-            setLastXDays={setLastXDays}
-            lastXDays={lastXDays}
-            isLoading={false}
-            dataType={dataType}
-            setDataType={setDataType}
-        >
+        <Base isFetching={isFetching} lastUpdated={lastUpdated}>
             <Grid
                 container
                 direction="row"
                 justifyContent="center"
-                alignItems="flex-start"
+                alignItems="center"
             >
                 {isLoading
-                    ? 'Loading . . . '
+                    ? [1, 2, 3, 4].map((placeHolder) => (
+                          <Grid item xs={12} sm={6} md={3}>
+                              <Box
+                                  mt={2}
+                                  display="flex"
+                                  sx={{ justifyContent: 'center' }}
+                              >
+                                  <Skeleton
+                                      variant="circular"
+                                      width={240}
+                                      height={240}
+                                  />
+                              </Box>
+                          </Grid>
+                      ))
                     : data &&
                       Object.entries(data).map(([name, value], index) => {
                           const parameter = Number(value);
                           return Number.isNaN(parameter) ? null : (
-                              <Grid key={name} item sm={3}>
-                                  <Gauge
-                                      minMax={minMaxMap[index]}
-                                      id={name}
-                                      value={Number(value)}
-                                      name={`${index}:${name}`}
-                                  />
+                              <Grid key={name} item xs={12} sm={6} md={3}>
+                                  <Box
+                                      mt={2}
+                                      display="flex"
+                                      sx={{ justifyContent: 'center' }}
+                                  >
+                                      <Gauge
+                                          minMax={minMaxMap[index]}
+                                          id={name}
+                                          value={Number(value)}
+                                          name={name}
+                                      />
+                                  </Box>
                               </Grid>
                           );
                       })}
