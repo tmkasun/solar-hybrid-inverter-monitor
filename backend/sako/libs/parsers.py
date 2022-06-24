@@ -4,10 +4,13 @@ def parseQMOD(responseString):
     if responseString[1].lower() == 'u':
         return {'mode': 'utility'}
     if responseString[1].lower() == 'l':
-        return {'mode': 'live'}
+        return {'mode': 'line'}
     else:
         return {'mode': '{}'.format(responseString)}
 
+"""
+Device general status parameters inquiry
+"""
 def parseQPIGS(responseString):
     print(responseString)
     print(len(responseString))
@@ -22,21 +25,21 @@ def parseQPIGS(responseString):
         'Output Frequency',
         'Output VA',
         'Output Power(W)',
-        'Output Usage %',
-        'Unknow',
+        'Output load %',
+        'BUS Voltage',
         'Battery Voltage',
         'Battery Charging Current',
-        'Unknow',
-        'Unknow',
-        'PV Charging current *',
+        'Battery capacity',
+        'Inverter heat sink temperature',
+        'PV Input current for battery',
         'PV Voltage',
-        'Battery charging V **',
-        'Battery discharge I **',
-        'Unknow',
-        'Unknow',
-        'Unknow',
+        'Battery V from SCC',
+        'Battery discharge I',
+        'Device status',
+        'Fans voltage offset(mV)',
+        'EEPROM version',
         'PV Power',
-        'Unknow',
+        'Device status',
         'Unknow',
         ]
     currentIndex = 0

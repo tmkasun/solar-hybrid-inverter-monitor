@@ -42,8 +42,14 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
     const chartRefInst = useRef<HTMLDivElement | null>(null);
     const chartInst = useRef<any>(null);
     const { id, name, value, minMax } = props;
-    const [min, max] = minMax;
-    const valueDiff = min + (max - min);
+    let min, max;
+    if (minMax) {
+        const [_min, _max] = minMax;
+        min = _min;
+        max = _max;
+    } else {
+        console.warn(`Invalid minMax for ${id}`);
+    }
     const options: EChartsOption = {
         tooltip: {
             formatter: '{a} <br/>{b} : {c}%',

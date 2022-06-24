@@ -7,6 +7,7 @@ export const minMaxMap: { [key: number]: [number, number] } = {
     4: [0, 2500], // OVA
     5: [0, 3000], // OPW
     6: [0, 100], // OU
+    7: [0, 500], // BUS voltage
     8: [24.5, 27.5], // BV
     9: [0, 50], // BCC
     10: [0, 50], // PVCC
@@ -20,7 +21,7 @@ const API_BASE_PATH =
     'https://c65f16f4-836b-47d2-9c70-538ee54dfd7d-prod.e1-us-east-azure.choreoapis.dev/pvkl/inverter/1.0.0';
 export default function useInverterLiveStats() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
+    const [reFetchInt, setReFetchInt] = useState(1000);
     const queryData = useQuery(
         'liveStats',
         async () => {
@@ -31,14 +32,15 @@ export default function useInverterLiveStats() {
                 },
             });
             if (!response.ok) {
-                throw new Error('Unable to fetch data /final.json');
+                throw new Error('Unable to fetch Inverter Stats');
             }
             setLastUpdated(new Date());
             return await response.json();
         },
         {
             // Refetch the data every second
-            refetchInterval: 1000,
+            refetchInterval: reFetchInt,
+            onError: () => setReFetchInt(0),
         }
     );
     return { ...queryData, lastUpdated };
@@ -46,6 +48,8 @@ export default function useInverterLiveStats() {
 
 export function useInverterMode() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+    const [reFetchInt, setReFetchInt] = useState(1000);
+
     const queryData = useQuery(
         'stats/mode',
         async () => {
@@ -56,14 +60,15 @@ export function useInverterMode() {
                 },
             });
             if (!response.ok) {
-                throw new Error('Unable to fetch data /final.json');
+                throw new Error('Unable to fetch Inverter Mode');
             }
             setLastUpdated(new Date());
             return await response.json();
         },
         {
             // Refetch the data every second
-            refetchInterval: 1000 * 30,
+            refetchInterval: reFetchInt,
+            onError: () => setReFetchInt(0),
         }
     );
     return { ...queryData, lastUpdated };
