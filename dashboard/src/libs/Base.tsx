@@ -8,8 +8,9 @@ import useScrollTrigger from '@mui/material/useScrollTrigger';
 import Box from '@mui/material/Box';
 import Slide from '@mui/material/Slide';
 import Link from '@mui/material/Link';
+import { useInverterMode } from './hooks/inverterStats';
 
-function HideOnScroll(props) {
+function HideOnScroll(props: any) {
     const { children, window } = props;
     // Note that you normally won't need to set the window ref as useScrollTrigger
     // will default to window.
@@ -32,8 +33,9 @@ HideOnScroll.propTypes = {
     window: PropTypes.func,
 };
 
-export default function HideAppBar(props) {
+export default function HideAppBar(props: any) {
     const { children, isLoading, ...rest } = props;
+    const { data, isLoading: isModeLoading, isError } = useInverterMode();
     return (
         <>
             <CssBaseline />
@@ -46,8 +48,11 @@ export default function HideAppBar(props) {
                 >
                     <Toolbar>
                         <Typography sx={{ flexGrow: 1 }} variant="h6">
-                            🇱🇰 Fuel Availability
+                            🇱🇰 Inverter Stats
                         </Typography>
+                        <Box>
+                            Mode: {data && data.mode}
+                        </Box>
                     </Toolbar>
                 </AppBar>
             </HideOnScroll>

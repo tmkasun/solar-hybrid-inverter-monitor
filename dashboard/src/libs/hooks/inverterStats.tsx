@@ -39,3 +39,25 @@ export default function useInverterLiveStats() {
         }
     );
 }
+
+export function useInverterMode() {
+    return useQuery(
+        'stats/mode',
+        async () => {
+            const response = await fetch(`${API_BASE_PATH}/mode`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
+            });
+            if (!response.ok) {
+                throw new Error('Unable to fetch data /final.json');
+            }
+            return await response.json();
+        },
+        {
+            // Refetch the data every second
+            refetchInterval: 1000 * 30,
+        }
+    );
+}

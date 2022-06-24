@@ -7,7 +7,7 @@ import Typography from '@mui/material/Typography';
 import Gauge from './libs/Gauge';
 import Base from './libs/Base';
 import './styles.css';
-import useInverterLiveStats, { minMaxMap } from './libs/hooks/useInverterLiveStats';
+import useInverterLiveStats, { minMaxMap } from './libs/hooks/inverterStats';
 
 const SectionSeperator = () => (
     <Grid item sm={12}>
