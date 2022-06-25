@@ -1,6 +1,6 @@
 {
-    "short_name": "Fuel Status",
-    "name": "LKA Gov Fuel status",
+    "short_name": "IMS",
+    "name": "Inverter Management System",
     "icons": [
       {
         "src": "favicon.ico",

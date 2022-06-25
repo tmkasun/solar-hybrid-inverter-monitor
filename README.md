@@ -1,5 +1,7 @@
 # Inverter USB Driver + Monitoring Dashboard
 
+![image](https://user-images.githubusercontent.com/3313885/175784426-5fe17f33-09e2-493f-89ab-6d0e3239ac0d.png)
+
 > No need to cut cables or connect to adaptors, Just plug the USB cable and play with your inverter
 
 This is an inverter monitoring and controlling system for hybrid inverters, Following are the main components in the system.
@@ -108,3 +110,9 @@ if so it show show as
 Bus 001 Device 002: ID 0665:5161 Cypress Semiconductor USB to Serial
 ```
 in the output of `lsusb` command 
+
+## Similar projects
+
+- [jblance/mpp-solar](https://github.com/jblance/mpp-solar)
+- [ned-kelly/docker-voltronic-homeassistant](https://github.com/ned-kelly/docker-voltronic-homeassistant)
+
