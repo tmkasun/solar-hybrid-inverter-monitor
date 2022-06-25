@@ -10,6 +10,7 @@ import './styles.css';
 import useInverterLiveStats, { minMaxMap } from './libs/hooks/inverterStats';
 import { Skeleton } from '@mui/material';
 import PageError from './libs/components/Error';
+import TemperatureGauge from './libs/components/TemperatureGauge';
 
 const SectionSeperator = () => (
     <Grid item sm={12}>
@@ -34,7 +35,7 @@ const SectionSeperator = () => (
 const App = () => {
     const { isLoading, data, isError, error, lastUpdated, isFetching } =
         useInverterLiveStats();
-    
+
     return (
         <Base isFetching={isFetching} lastUpdated={lastUpdated}>
             <PageError open={isError} error={error} />
@@ -70,12 +71,16 @@ const App = () => {
                                       display="flex"
                                       sx={{ justifyContent: 'center' }}
                                   >
-                                      <Gauge
-                                          minMax={minMaxMap[index]}
-                                          id={name}
-                                          value={Number(value)}
-                                          name={name}
-                                      />
+                                      {index === 11 ? (
+                                          <TemperatureGauge name={name} value={value} />
+                                      ) : (
+                                          <Gauge
+                                              minMax={minMaxMap[index]}
+                                              id={name}
+                                              value={Number(value)}
+                                              name={`${index}:${name}`}
+                                          />
+                                      )}
                                   </Box>
                               </Grid>
                           );

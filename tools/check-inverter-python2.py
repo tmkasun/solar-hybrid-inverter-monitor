@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+
 import usb.core, usb.util, usb.control
 import crc16
 vendorId = 0x0665

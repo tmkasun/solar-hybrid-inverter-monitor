@@ -1,31 +1,94 @@
-# Sako Inverter Driver
+# Inverter USB Driver + Monitoring Dashboard
 
-## Steps
-- 
+> No need to cut cables or connect to adaptors, Just plug the USB cable and play with your inverter
+
+This is an inverter monitoring and controlling system for hybrid inverters, Following are the main components in the system.
+- Inverter driver program to communicate with USB serial port (Python)
+- Python Flask based REST API to expose the data
+- ReactJS based web portal for monitoring and controlling the inverter
+
+# [DEMO](energy.knnect.com)
+## Supported inverters
+
+Currently we have tested this on
+
+- Sako Isun 3KW
+
+## Supported compute devices
+
+- Raspberry pi
+- Orange pi
+- Any Unix device
+
+## Hardware setup
+
+- Use the USB cable provided with the inverter or any appropriate USB cable
+- Connect the USB cable to any of the supported device
+- Install the pre-requisite mentioned in the following `install` steps
+- Run the `tools/check-inverter.py` script to connection between inverter and the compute device 
+- For any issues check the `Troubleshoot` section
+
+## How it works
+
+Most of the Hybrid(Chinees) inverters comes with the following Serial interface
 ```
-sudo apt-get install python3-pip
+Bus 001 Device 002: ID 0665:5161 Cypress Semiconductor USB to Serial
+```
+For this `VendorID` and `ProductID` there are several UPS and inverter devices using this serial com device. But this device had no drivers for Raspberry pi, So when the inverter is connected to a Raspberry pi(or similar) compute device , it detects as a USB block storage device
+```
+/dev/usb/hiddev0
 ```
 
-- 
+not as a USB serial communication device.
+
+i:e 
+
 ```
-python3 -m pip install pyusb
+/dev/ttyS0 or /dev/USB0
 ```
 
-- 
-```
-python3 -m pip install crc16
-```
--  
-```
-sudo apt-get install python3-dev
-```
+To establish communication between the inverter and the compute device we had to use `pyUSB` approach described in [here](http://allican.be/blog/2017/01/28/reverse-engineering-cypress-serial-usb.html). For the basic working principles of Inverter - Compute device (Raspberry pi) communication check the [above](http://allican.be/blog/2017/01/28/reverse-engineering-cypress-serial-usb.html) article.
 
-- 
-```
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
+Once the communication is established it's was just a matter of routing the data to client application (React app) to present the data.
 
--
+We use `Flask` to implement REST API and ReactJS, MUI , React Query in the UIs.
+
+## Install
+Most of the Raspberry pi & Orange Pi variations doesn't come with `pip` pre-installed, Hence we have to run this 
+- > sudo apt-get install python3-pip
+
+Install the Python USB communication library
+- > python3 -m pip install pyusb
+
+This is required for the following [`crc16`](https://pypi.org/project/crc16/) library
+
+- > sudo apt-get install python3-dev
+
+CRC16 is used to generate the 2 byte CRC, CRC is a way of detecting accidental changes in data storage or transmission
+
+| Note: This only works upto python 3.9 versions, If you have a latest version of Python 3.10+, This will not work
+
+- > python3 -m pip install crc16 
+
+Add a `Udev` rule as shown below, This is required to allow communicating with the USB device for none-sudoers users. Example file is given in 
 ```
-sudo vim /etc/udev/rules.d/99-knnect.rules
+references/99-knnect.rules
 ```
+in this repo
+- > sudo vim /etc/udev/rules.d/99-<any-name>.rules
+
+Restart the Udev admin to apply the changes
+- > sudo udevadm control --reload-rules && sudo udevadm trigger
+
+## Troubleshoot
+
+- Use
+```
+sudo lsusb
+```
+to check whether the Serial Communication device has been detected by the operating system
+if so it show show as
+```
+Bus 001 Device 002: ID 0665:5161 Cypress Semiconductor USB to Serial
+```
+in the output of `lsusb` command 

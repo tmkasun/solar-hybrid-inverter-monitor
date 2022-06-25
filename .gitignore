@@ -9,6 +9,7 @@ lerna-debug.log*
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 __pycache__
+nohup.out*
 # Runtime data
 pids
 *.pid
