@@ -78,7 +78,7 @@ const App = () => {
                                               minMax={minMaxMap[index]}
                                               id={name}
                                               value={Number(value)}
-                                              name={`${index}:${name}`}
+                                              name={name}
                                           />
                                       )}
                                   </Box>

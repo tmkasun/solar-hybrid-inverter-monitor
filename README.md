@@ -116,3 +116,9 @@ in the output of `lsusb` command
 - [jblance/mpp-solar](https://github.com/jblance/mpp-solar)
 - [ned-kelly/docker-voltronic-homeassistant](https://github.com/ned-kelly/docker-voltronic-homeassistant)
 
+
+## TODO
+
+- Improve UI
+- Currently you need to set battery discharge current rate (i:e 240Ah set to 240A)
+- Max PV power and voltage values
