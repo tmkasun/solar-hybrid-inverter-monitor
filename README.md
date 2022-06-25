@@ -122,3 +122,7 @@ in the output of `lsusb` command
 - Improve UI
 - Currently you need to set battery discharge current rate (i:e 240Ah set to 240A)
 - Max PV power and voltage values
+  
+## Protocol Docs
+  - https://github.com/softwarecrash/Solar2MQTT/tree/master/Protocol
+  - https://www.fve-mp.cz/data/blob/product-application_pdf-20190724092401-8519-pip-gk-mk-protocol.pdf
