@@ -7,7 +7,7 @@ This is an inverter monitoring and controlling system for hybrid inverters, Foll
 - Python Flask based REST API to expose the data
 - ReactJS based web portal for monitoring and controlling the inverter
 
-# [DEMO](energy.knnect.com)
+# [DEMO](https://energy.knnect.com)
 ## Supported inverters
 
 Currently we have tested this on
@@ -48,6 +48,20 @@ i:e
 ```
 
 To establish communication between the inverter and the compute device we had to use `pyUSB` approach described in [here](http://allican.be/blog/2017/01/28/reverse-engineering-cypress-serial-usb.html). For the basic working principles of Inverter - Compute device (Raspberry pi) communication check the [above](http://allican.be/blog/2017/01/28/reverse-engineering-cypress-serial-usb.html) article.
+
+Another important piece of the puzzle was to find out the communication protocol.
+[This document](https://www.fve-mp.cz/data/blob/product-application_pdf-20190724092401-8519-pip-gk-mk-protocol.pdf) from a random generous Czech inverter site.
+
+Without this, Decoding the values sent from inverter was a challenge
+
+and the meanings of 
+- **QPIGS**<cr>: Device general status parameters inquiry
+
+and 
+
+- **QMOD**<cr>: Device Mode inquiry
+
+were like greek!
 
 Once the communication is established it's was just a matter of routing the data to client application (React app) to present the data.
 
