@@ -1,15 +1,15 @@
-# Inverter USB Driver + Monitoring Dashboard
+# Solar Inverter USB Driver + Monitoring Dashboard
 
 ![image](https://user-images.githubusercontent.com/3313885/175784426-5fe17f33-09e2-493f-89ab-6d0e3239ac0d.png)
 
 > No need to cut cables or connect to adaptors, Just plug the USB cable and play with your inverter
 
-This is an inverter monitoring and controlling system for hybrid inverters, Following are the main components in the system.
-- Inverter driver program to communicate with USB serial port (Python)
+This is an Solar inverter monitoring and controlling system for hybrid inverters, Following are the main components in the system.
+- Solar Inverter driver program to communicate with USB serial port (Python)
 - Python Flask based REST API to expose the data
 - ReactJS based web portal (PWA) for monitoring and controlling the inverter
 # [DEMO](https://energy.knnect.com)
-## Supported inverters
+## Tested Solar inverters
 
 Currently we have tested this on
 
