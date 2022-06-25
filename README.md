@@ -5,8 +5,7 @@
 This is an inverter monitoring and controlling system for hybrid inverters, Following are the main components in the system.
 - Inverter driver program to communicate with USB serial port (Python)
 - Python Flask based REST API to expose the data
-- ReactJS based web portal for monitoring and controlling the inverter
-
+- ReactJS based web portal (PWA) for monitoring and controlling the inverter
 # [DEMO](https://energy.knnect.com)
 ## Supported inverters
 
@@ -94,6 +93,9 @@ in this repo
 Restart the Udev admin to apply the changes
 - > sudo udevadm control --reload-rules && sudo udevadm trigger
 
+## Accessing from anyway
+
+Currently this only support monitoring through the local network, If you want to monitor or control the device through internet, Then you need to expose the APIs through [Choreo](https://console.choreo.dev/) (It's free) like API proxy service or  Buy a [Blynk](https://blynk.io/) subscription and publish data to blynk.
 ## Troubleshoot
 
 - Use
