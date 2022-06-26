@@ -134,3 +134,4 @@ TODO:
 
 - Need to implement a websocket API to communicate with the backend server
   - [Flask SocketIO](https://flask-socketio.readthedocs.io/en/latest/getting_started.html)
+  - [Examples](https://blog.miguelgrinberg.com/post/add-a-websocket-route-to-your-flask-2-x-application)
