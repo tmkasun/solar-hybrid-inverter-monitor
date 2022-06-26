@@ -1,10 +1,14 @@
 def parseQMOD(responseString):
     if responseString[1].lower() == 'b':
-        return {'mode': 'battery'}
-    if responseString[1].lower() == 'u':
-        return {'mode': 'utility'}
+        return {'mode': 'Battery'}
     if responseString[1].lower() == 'l':
-        return {'mode': 'line'}
+        return {'mode': 'Line'}
+    if responseString[1].lower() == 's':
+        return {'mode': 'Standby'}
+    if responseString[1].lower() == 'f':
+        return {'mode': 'Fault'}
+    if responseString[1].lower() == 'y':
+        return {'mode': 'Bypass'}
     else:
         return {'mode': '{}'.format(responseString)}
 
