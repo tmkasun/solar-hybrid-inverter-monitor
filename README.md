@@ -8,7 +8,6 @@ This is an Solar inverter monitoring and controlling system for hybrid inverters
 - Solar Inverter driver program to communicate with USB serial port (Python)
 - Python Flask based REST API to expose the data
 - ReactJS based web portal (PWA) for monitoring and controlling the inverter
-# [DEMO](https://energy.knnect.com)
 ## Tested Solar inverters
 
 Currently we have tested this on
