@@ -24,8 +24,8 @@ import {
 
 function TemperatureGauge({ name, value }: any) {
     const specialProps = {
-        'xmlns:xlink': 'http://www.w3.org/1999/xlink',
-        'xml:space': 'preserve',
+        'xmlnsXlink': 'http://www.w3.org/1999/xlink',
+        'xmlSpace': 'preserve',
     };
     return (
         <div className="button button-dial">
@@ -44,7 +44,7 @@ function TemperatureGauge({ name, value }: any) {
                     x="0px"
                     y="0px"
                     viewBox="0 0 100 125"
-                    enable-background="new 0 0 100 100"
+                    enableBackground="new 0 0 100 100"
                     {...specialProps}
                 >
                     <g>

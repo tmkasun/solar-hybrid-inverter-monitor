@@ -1,11 +1,15 @@
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import * as echarts from 'echarts/core';
-import type { EChartsOption, ECharts, SetOptionOpts } from 'echarts';
-
-import { TitleComponent } from 'echarts/components';
+import type { EChartsOption } from 'echarts';
+import { TitleComponent, TooltipComponent } from 'echarts/components';
 import { GaugeChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
+import { styled } from '@mui/material';
 
+const StyledEChartRoot = styled('div')({
+    width: '50%',
+    height: '400px',
+});
 export const defaultOptions: EChartsOption = {
     tooltip: {
         formatter: '{a} <br/>{b} : {c}%',
@@ -31,11 +35,11 @@ export const defaultOptions: EChartsOption = {
     ],
 };
 
-echarts.use([TitleComponent, GaugeChart, CanvasRenderer]);
+echarts.use([TitleComponent, GaugeChart, CanvasRenderer, TooltipComponent]);
 type InverterGaugeChartProps = {
     value: number;
     name: string;
-    id: string;
+    id?: string;
     minMax: [number, number];
 };
 const EnergyLineChart = (props: InverterGaugeChartProps) => {
@@ -48,7 +52,7 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
         min = _min;
         max = _max;
     } else {
-        console.warn(`Invalid minMax for ${id}`);
+        console.warn(`Invalid minMax for ${id || name}`);
     }
     const options: EChartsOption = {
         tooltip: {
@@ -108,13 +112,7 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
             lineChart?.setOption(options, true);
         }
     }, []);
-    return (
-        <div
-            id={id}
-            ref={chartRefInst}
-            style={{ width: '100%', height: '400px' }}
-        />
-    );
+    return <StyledEChartRoot id={id || name} ref={chartRefInst} />;
 };
 
 export default EnergyLineChart;

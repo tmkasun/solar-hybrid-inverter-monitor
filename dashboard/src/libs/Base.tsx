@@ -1,25 +1,15 @@
 import React, { JSXElementConstructor, ReactElement } from 'react';
-import PropTypes from 'prop-types';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import CssBaseline from '@mui/material/CssBaseline';
 import useScrollTrigger from '@mui/material/useScrollTrigger';
 import Box from '@mui/material/Box';
-import Slide from '@mui/material/Slide';
 import Link from '@mui/material/Link';
-import BatteryChargingFullIcon from '@mui/icons-material/BatteryChargingFull';
-import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
-
+import DiagramVsGauges from './components/DiagramVsGauges';
+import SummaryView from './components/SummaryView';
 import { useInverterMode } from './hooks/inverterStats';
-import { keyframes, LinearProgress, Skeleton, Tooltip } from '@mui/material';
 
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-
-dayjs.extend(relativeTime, {
-    rounding: Math.floor,
-});
 function ElevationScroll(props: {
     children: ReactElement<any, string | JSXElementConstructor<any>>;
 }) {
@@ -33,15 +23,10 @@ function ElevationScroll(props: {
     });
 }
 
-const blinkerAnimation = keyframes`
-    50% {
-      opacity: 0;
-    }
-`;
-
 export default function HideAppBar(props: any) {
     const { children, isFetching, lastUpdated } = props;
     const { data, isLoading: isModeLoading, isError } = useInverterMode();
+
     return (
         <>
             <CssBaseline />
@@ -50,80 +35,30 @@ export default function HideAppBar(props: any) {
                     position="fixed"
                     sx={{
                         backdropFilter: 'blur(4px)',
-                        backgroundColor: '#0071adbd',
+                        backgroundColor:
+                            data && data.mode.toLocaleLowerCase() === 'battery'
+                                ? 'orange'
+                                : '#0071adbd',
                     }}
                 >
                     <Toolbar>
                         <Typography sx={{ flexGrow: 1 }} variant="h6">
                             Inverter Stats
                         </Typography>
-                        <Box
-                            display="flex"
-                            justifyContent="flex-start"
-                            alignContent="flex-start"
-                            flexDirection="column"
-                            sx={{
-                                alignItems: 'center',
-                            }}
-                        >
-                            <Box display="flex">
-                                Mode:{' '}
-                                {isModeLoading ? (
-                                    <Skeleton
-                                        variant="rectangular"
-                                        width={30}
-                                    />
-                                ) : (
-                                    <Tooltip title={data && data.mode}>
-                                        {data &&
-                                        data.mode.toLocaleLowerCase() ===
-                                            'battery' ? (
-                                            <BatteryChargingFullIcon
-                                                sx={{
-                                                    animation: `${blinkerAnimation} 1s linear infinite`,
-                                                }}
-                                                color="warning"
-                                            />
-                                        ) : (
-                                            <ElectricalServicesIcon
-                                                sx={{
-                                                    color: '#08ff8f',
-                                                    animation: `${blinkerAnimation} 1s linear infinite`,
-                                                }}
-                                            />
-                                        )}
-                                    </Tooltip>
-                                )}
-                            </Box>
-                            <Box fontSize={10} display="flex">
-                                Last updated:{' '}
-                                {lastUpdated ? (
-                                    `${dayjs().diff(
-                                        lastUpdated,
-                                        's'
-                                    )} seconds ago`
-                                ) : (
-                                    <Skeleton width={40} variant="text" />
-                                )}
-                                {isFetching && (
-                                    <LinearProgress
-                                        sx={{
-                                            width: '100%',
-                                            bottom: 0,
-                                            position: 'absolute',
-                                        }}
-                                        color="secondary"
-                                    />
-                                )}
-                            </Box>
-                        </Box>
+                        <DiagramVsGauges />
+                        <SummaryView
+                            isModeLoading={isModeLoading}
+                            data={data}
+                            lastUpdated={lastUpdated}
+                            isFetching={isFetching}
+                        />
                     </Toolbar>
                 </AppBar>
             </ElevationScroll>
             <Toolbar />
             <Box>{children}</Box>
             <Box color="text.secondary">
-                Copyright 2022 {' '}
+                Copyright 2022{' '}
                 <Link
                     target="_blank"
                     rel="noopener"
