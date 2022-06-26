@@ -126,5 +126,6 @@ in the output of `lsusb` command
 
 ## Web UI
 
-![image](https://user-images.githubusercontent.com/3313885/175807561-20da1021-5882-48c4-ab57-ed3cc1cd0dde.png)
-![image](https://user-images.githubusercontent.com/3313885/175807570-af9c6909-90b4-4fdc-b521-82b70c1c7749.png)
+![image](https://user-images.githubusercontent.com/3313885/175807616-ec4f8009-abb0-4b6c-b4dd-acd381cafef1.png)
+
+![image](https://user-images.githubusercontent.com/3313885/175807635-b5fb3409-b65b-48ea-9fd4-d46559e25883.png)
