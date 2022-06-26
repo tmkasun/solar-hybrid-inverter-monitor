@@ -1,8 +1,5 @@
 # Solar Inverter USB Driver + Monitoring Dashboard
 
-![image](https://user-images.githubusercontent.com/3313885/175807561-20da1021-5882-48c4-ab57-ed3cc1cd0dde.png)
-![image](https://user-images.githubusercontent.com/3313885/175807570-af9c6909-90b4-4fdc-b521-82b70c1c7749.png)
-
 > No need to cut cables or connect to adaptors, Just plug the USB cable and play with your inverter
 
 This is an Solar inverter monitoring and controlling system for hybrid inverters, Following are the main components in the system.
@@ -126,3 +123,8 @@ in the output of `lsusb` command
 ## Protocol Docs
   - https://github.com/softwarecrash/Solar2MQTT/tree/master/Protocol
   - https://www.fve-mp.cz/data/blob/product-application_pdf-20190724092401-8519-pip-gk-mk-protocol.pdf
+
+## Web UI
+
+![image](https://user-images.githubusercontent.com/3313885/175807561-20da1021-5882-48c4-ab57-ed3cc1cd0dde.png)
+![image](https://user-images.githubusercontent.com/3313885/175807570-af9c6909-90b4-4fdc-b521-82b70c1c7749.png)
