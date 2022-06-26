@@ -33,7 +33,7 @@ const App = () => {
         <AppViewsProvider value={{ currentView: view, setView }}>
             <Base isFetching={isFetching} lastUpdated={lastUpdated}>
                 <PageError open={isError} error={error} />
-                {view === AppViews.Grid && data && (
+                {view === AppViews.Grid && (
                     <GridView isLoading={isLoading} data={data} />
                 )}
                 {view === AppViews.Diagram && data && <DiagramView />}
