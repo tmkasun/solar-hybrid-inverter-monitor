@@ -1,6 +1,7 @@
 # Solar Inverter USB Driver + Monitoring Dashboard
 
-![image](https://user-images.githubusercontent.com/3313885/175784426-5fe17f33-09e2-493f-89ab-6d0e3239ac0d.png)
+![image](https://user-images.githubusercontent.com/3313885/175807561-20da1021-5882-48c4-ab57-ed3cc1cd0dde.png)
+![image](https://user-images.githubusercontent.com/3313885/175807570-af9c6909-90b4-4fdc-b521-82b70c1c7749.png)
 
 > No need to cut cables or connect to adaptors, Just plug the USB cable and play with your inverter
 
