@@ -129,3 +129,8 @@ in the output of `lsusb` command
 ![image](https://user-images.githubusercontent.com/3313885/175807616-ec4f8009-abb0-4b6c-b4dd-acd381cafef1.png)
 
 ![image](https://user-images.githubusercontent.com/3313885/175807635-b5fb3409-b65b-48ea-9fd4-d46559e25883.png)
+
+TODO:
+
+- Need to implement a websocket API to communicate with the backend server
+  - [Flask SocketIO](https://flask-socketio.readthedocs.io/en/latest/getting_started.html)
