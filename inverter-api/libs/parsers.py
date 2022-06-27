@@ -12,9 +12,12 @@ def parseQMOD(responseString):
     else:
         return {'mode': '{}'.format(responseString)}
 
+
 """
 Device general status parameters inquiry
 """
+
+
 def parseQPIGS(responseString):
     print(responseString)
     print(len(responseString))
@@ -43,16 +46,69 @@ def parseQPIGS(responseString):
         'Fans voltage offset(mV)',
         'EEPROM version',
         'PV Power',
-        'Device status',
+        'Device status 2',
         'Unknow',
-        ]
+    ]
     currentIndex = 0
     data = {}
     for parameter in inverterParameters:
         if currentIndex == 0:
             parameter = parameter[1:]
-        print("{} : {} => {}".format(currentIndex + 1 , parameterMappings[currentIndex], parameter))
+        print("{} : {} => {}".format(currentIndex + 1,
+                                     parameterMappings[currentIndex], parameter))
+        if currentIndex == 16:
+            # 8 bit status flags
+            deviceStatus = {
+                'pvoac': {
+                    "name": "PV or AC feed the load",
+                    "value": parameter[0]
+                },
+                'confs': {
+                    "name": "Configuration status",
+                    "value": parameter[1]
+                },
+                'sccfwv': {
+                    "name": "SCC firmware version",
+                    "value": parameter[2]
+                },
+                'ls': {
+                    "name": "Load status",
+                    "value": parameter[3]
+                },
+                'res': {
+                    "name": "reserved",
+                    "value": parameter[4]
+                },
+                'conof': {
+                    "name": "Charging on/off",
+                    "value": parameter[5]
+                },
+                'sccconof': {
+                    "name": "SCC charging on/off",
+                    "value": parameter[6]
+                },
+                'acconof': {
+                    "name": "AC charging on/off",
+                    "value": parameter[7]
+                }
+            }
+            parameter = deviceStatus
+        elif currentIndex == 20:
+            deviceStatus = {
+                'fmode': {
+                    'name': 'charging to floating mode',
+                    "value": parameter[0]
+                },
+                'sw': {
+                    'name': 'Switch On',
+                    "value": parameter[1]
+                },
+                'dustp': {
+                    'name': 'dustproof installed',
+                    "value": parameter[2]
+                }
+            }
+            parameter = deviceStatus
         data[parameterMappings[currentIndex]] = parameter
-        currentIndex +=1
+        currentIndex += 1
     return data
-
