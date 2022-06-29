@@ -36,10 +36,33 @@ def getResult(timeout=600):
     return res
 # First response = (NAKss
 # sendCommand(getCommand('QPIWS'))
+# sendCommand(getCommand('QOPPT'))
 # sendCommand(getCommand('QPIRI'))
-sendCommand(getCommand('QPIGS'))
+
+# sendCommand(getCommand('QPIGS'))
+
 # sendCommand(getCommand('QDI'))
 # sendCommand(getCommand('QMOD'))
+
+# Write to inverter
+
+# Setting device charge priority
+# sendCommand(getCommand('PCP01')) # Solar first
+# sendCommand(getCommand('PCP02')) # Solar & Utility
+# sendCommand(getCommand('PCP03')) # Solar only
+
+ # Setting device output source priority
+# sendCommand(getCommand('POP01')) # Solar first
+# sendCommand(getCommand('POP02')) # SBU
+sendCommand(getCommand('POP00')) # Utility first
+
+# setting Battery voltage back to battery PBDV<nn.n><cr>: Battery voltage back to battery
+
+# sendCommand(getCommand('PBDV25.5'))
+
+# setting PBCV<nn.n><cr>: Battery voltage back to utility
+# sendCommand(getCommand('PBCV24.5'))
+
 
 # String QPIGS = "\x51\x50\x49\x47\x53\xB7\xA9\x0D";
 # String QPIWS = "\x51\x50\x49\x57\x53\xB4\xDA\x0D";  
@@ -50,7 +73,7 @@ sendCommand(getCommand('QPIGS'))
 responseString = getResult()
 print(responseString)
 print(len(responseString))
-# assert False
+assert False
 inverterParameters = responseString.split(' ')
 print(len(inverterParameters))
 
