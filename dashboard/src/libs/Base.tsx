@@ -36,7 +36,7 @@ export default function HideAppBar(props: any) {
                     sx={{
                         backdropFilter: 'blur(4px)',
                         backgroundColor:
-                            data && data.mode.toLocaleLowerCase() === 'battery'
+                            data && data.mode.toLocaleLowerCase() === 'Battery'
                                 ? 'orange'
                                 : '#0071adbd',
                     }}
