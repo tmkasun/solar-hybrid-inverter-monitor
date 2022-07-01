@@ -22,8 +22,36 @@ class Inverter(object):
     def getAll():
         Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
         Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
-    
+
     @staticmethod
     def getQMOD():
         Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
+
+    @staticmethod
+    def setChargingMode(mode):
+        # sendCommand(getCommand('PCP01')) # Solar first => SF
+        # sendCommand(getCommand('PCP02')) # Solar & Utility => SU
+        # sendCommand(getCommand('PCP03')) # Solar only => SO
+        if mode.lower() == 'sf':
+            return sendCommand(dev, "PCP01")
+        elif mode.lower() == 'su':
+            return sendCommand(dev, "PCP02")
+        elif mode.lower() == 'so':
+            return sendCommand(dev, "PCP03")
+        else:
+            return {"error": "Invalid charging mode"}
     
+    @staticmethod
+    def setOutputMode(mode):
+        # sendCommand(getCommand('POP01')) # Solar first => SF
+        # sendCommand(getCommand('POP02')) # SBU => SBU
+        # sendCommand(getCommand('POP00')) # Utility first => UF
+
+        if mode.lower() == 'sf':
+            return sendCommand(dev, "POP01")
+        elif mode.lower() == 'sbu':
+            return sendCommand(dev, "POP02")
+        elif mode.lower() == 'uf':
+            return sendCommand(dev, "POP00")
+        else:
+            return {"error": "Invalid output mode"}

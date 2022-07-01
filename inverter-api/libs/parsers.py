@@ -1,3 +1,28 @@
+ACK = "ACK"
+NACK = "NAK"
+
+# Setting device output source priority
+
+
+def parsePOP(responseString):
+    return parsePCP(responseString)
+
+
+"""
+Setting device charge priority
+"""
+
+
+def parsePCP(responseString):
+    print(responseString)
+    paddingRemoved = responseString[1:]
+    if paddingRemoved.startswith(ACK):
+        return {"accept": True}
+    if paddingRemoved.startswith(NACK):
+        return {"accept": False}
+    return {"raw": '{}'.format(responseString)}
+
+
 def parseQMOD(responseString):
     if responseString[1].lower() == 'b':
         return {'mode': 'Battery'}
@@ -10,7 +35,7 @@ def parseQMOD(responseString):
     if responseString[1].lower() == 'y':
         return {'mode': 'Bypass'}
     else:
-        return {'mode': '{}'.format(responseString)}
+        return {'raw': '{}'.format(responseString)}
 
 
 """
