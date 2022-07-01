@@ -1,4 +1,11 @@
-import { Box, Grid, Paper, Skeleton } from '@mui/material';
+import {
+    Alert,
+    Box,
+    CircularProgress,
+    Grid,
+    Paper,
+    Skeleton,
+} from '@mui/material';
 import React from 'react';
 import Gauge from '../Gauge';
 import { minMaxMap } from '../hooks/inverterStats';
@@ -13,22 +20,25 @@ function GridView({ isLoading, data }: GridViewProps) {
     if (isLoading) {
         return (
             <>
-                {[1, 2, 3, 4].map((placeHolder) => (
-                    <Grid key={placeHolder} item xs={12} sm={6} md={4}>
-                        <Box
-                            mt={2}
-                            display="flex"
-                            sx={{ justifyContent: 'center' }}
-                        >
-                            <Skeleton
-                                variant="circular"
-                                width={240}
-                                height={240}
-                            />
-                        </Box>
-                    </Grid>
-                ))}
+                <Grid item xs={12} sm={6} md={4}>
+                    <Box
+                        mt={2}
+                        display="flex"
+                        sx={{ justifyContent: 'center' }}
+                    >
+                        <CircularProgress />
+                    </Box>
+                </Grid>
             </>
+        );
+    }
+    if (!isLoading && !data) {
+        return (
+            <Grid item xs={12} sm={6} md={4}>
+                <Box mt={2} display="flex" sx={{ justifyContent: 'center' }}>
+                    <Alert severity="error">No data found</Alert>
+                </Box>
+            </Grid>
         );
     }
     const parameters = Object.entries(data);
@@ -70,13 +80,19 @@ function GridView({ isLoading, data }: GridViewProps) {
                 alignItems="center"
             >
                 <Grid item xs={12} md={7}>
-                    <Paper>
+                    <Paper elevation={7}>
                         PV
-                        <Box display="flex" flexDirection="row">
+                        <Box
+                            display="flex"
+                            flexWrap="wrap"
+                            justifyContent="space-around"
+                            flexDirection="row"
+                        >
                             <Gauge
                                 minMax={minMaxMap[19]}
                                 value={Number(pvpValue)}
                                 name={pvp}
+                                unit="W"
                             />
                             <Gauge
                                 minMax={minMaxMap[13]}
@@ -101,12 +117,19 @@ function GridView({ isLoading, data }: GridViewProps) {
                 spacing={3}
             >
                 <Grid item xs={12} md={5}>
-                    <Paper>
-                        GRID
+                    <Paper
+                        sx={{
+                            height: '100%',
+                        }}
+                        elevation={7}
+                    >
+                        Utility
                         <Box
-                            flexWrap="nowrap"
                             display="flex"
                             flexDirection="row"
+                            justifyContent="center"
+                            alignItems="center"
+                            flexWrap="wrap"
                         >
                             <Gauge
                                 minMax={minMaxMap[0]}
@@ -122,9 +145,15 @@ function GridView({ isLoading, data }: GridViewProps) {
                     </Paper>
                 </Grid>
                 <Grid item xs={12} md={7}>
-                    <Paper>
-                        Out
-                        <Box flexWrap="wrap" display="flex" flexDirection="row">
+                    <Paper elevation={7}>
+                        Output
+                        <Box
+                            flexWrap="wrap"
+                            display="flex"
+                            justifyContent="space-around"
+                            alignItems="center"
+                            flexDirection="row"
+                        >
                             <Gauge
                                 minMax={minMaxMap[2]}
                                 value={Number(ovValue)}
@@ -162,13 +191,20 @@ function GridView({ isLoading, data }: GridViewProps) {
                 alignItems="center"
             >
                 <Grid item xs={12} md={8}>
-                    <Paper>
+                    <Paper elevation={7}>
                         Battery
-                        <Box flexWrap="wrap" display="flex" flexDirection="row">
+                        <Box
+                            flexWrap="wrap"
+                            display="flex"
+                            justifyContent="space-around"
+                            alignItems="center"
+                            flexDirection="row"
+                        >
                             <Gauge
                                 minMax={minMaxMap[8]}
                                 value={Number(batVValue)}
                                 name={batV}
+                                unit="V"
                             />
                             <Gauge
                                 minMax={minMaxMap[15]}

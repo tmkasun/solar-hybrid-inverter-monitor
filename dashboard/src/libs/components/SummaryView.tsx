@@ -53,7 +53,7 @@ function SummaryView({
                 ) : (
                     <Tooltip title={data && data.mode}>
                         {/* TODO: tmkasun add standby, Fault, Bypass modes */}
-                        {data && data.mode.toLocaleLowerCase() === 'Battery' ? (
+                        {data && data.mode.toLocaleLowerCase() === 'battery' ? (
                             <BatteryChargingFullIcon
                                 sx={{
                                     animation: `${blinkerAnimation} 1s linear infinite`,

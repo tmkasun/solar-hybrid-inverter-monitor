@@ -5,10 +5,12 @@ import { TitleComponent, TooltipComponent } from 'echarts/components';
 import { GaugeChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import { styled } from '@mui/material';
+import Box from '@mui/system/Box';
 
 const StyledEChartRoot = styled('div')({
-    width: '50%',
+    width: '400px',
     height: '400px',
+    display: 'flex',
 });
 export const defaultOptions: EChartsOption = {
     tooltip: {
@@ -41,11 +43,12 @@ type InverterGaugeChartProps = {
     name: string;
     id?: string;
     minMax: [number, number];
+    unit?: string;
 };
 const EnergyLineChart = (props: InverterGaugeChartProps) => {
     const chartRefInst = useRef<HTMLDivElement | null>(null);
     const chartInst = useRef<any>(null);
-    const { id, name, value, minMax } = props;
+    const { id, name, value, minMax, unit = '' } = props;
     let min, max;
     if (minMax) {
         const [_min, _max] = minMax;
@@ -78,7 +81,7 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
                 },
                 min,
                 max,
-                name: 'Pressure',
+                name,
                 type: 'gauge',
                 progress: {
                     show: true,
@@ -90,7 +93,6 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
                 data: [
                     {
                         value,
-                        name,
                     },
                 ],
             },
@@ -112,7 +114,14 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
             lineChart?.setOption(options, true);
         }
     }, []);
-    return <StyledEChartRoot id={id || name} ref={chartRefInst} />;
+    return (
+        <Box display="flex"  flexDirection="column">
+            <StyledEChartRoot id={id || name} ref={chartRefInst} />
+            <Box justifyContent="center" display="flex" mt={-13} mb={3}>
+                {name}
+            </Box>
+        </Box>
+    );
 };
 
 export default EnergyLineChart;
