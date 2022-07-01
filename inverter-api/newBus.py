@@ -46,13 +46,16 @@ def getResult(timeout=600):
 
 # Write to inverter
 
+# Device Warning Status inquiry
+# sendCommand(getCommand('QPIWS')) # Device Warning Status inquiry
+
 # Setting device charge priority
 # sendCommand(getCommand('PCP01')) # Solar first
 # sendCommand(getCommand('PCP02')) # Solar & Utility
 # sendCommand(getCommand('PCP03')) # Solar only
 
  # Setting device output source priority
-sendCommand(getCommand('POP01')) # Solar first
+# sendCommand(getCommand('POP01')) # Solar first
 # sendCommand(getCommand('POP02')) # SBU
 # sendCommand(getCommand('POP00')) # Utility first
 

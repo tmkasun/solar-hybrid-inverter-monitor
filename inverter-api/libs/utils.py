@@ -1,20 +1,26 @@
+from datetime import datetime
 from .parsers import parseQPIGS, parseQMOD
 import crc16
+import usb.core
+from multiprocessing import Lock
+lock = Lock()
+
 
 def getCommand(cmd):
     cmd = cmd.encode('utf-8')
-    crc = crc16.crc16xmodem(cmd).to_bytes(2,'big')
+    crc = crc16.crc16xmodem(cmd).to_bytes(2, 'big')
     cmd = cmd+crc
     cmd = cmd+b'\r'
-    while len(cmd)<8:
+    while len(cmd) < 8:
         cmd = cmd+b'\0'
     return cmd
 
+
 def getResult(dev, timeout=600):
-    res=""
-    i=0
+    res = ""
+    i = 0
     try:
-        res+="".join([chr(i) for i in dev.read(0x81, 500, timeout)])
+        res += "".join([chr(i) for i in dev.read(0x81, 500, timeout)])
     except usb.core.USBError as e:
         if e.errno == 110:
             pass
@@ -23,15 +29,20 @@ def getResult(dev, timeout=600):
             raise
     return res
 
+
 def sendCommand(dev, cmd):
     crc_command = getCommand(cmd)
+    lock.acquire()
     dev.ctrl_transfer(0x21, 0x9, 0x200, 0, crc_command)
     rawResult = getResult(dev)
+    lock.release()
+    result = {}
     if cmd == 'QPIGS':
-        return parseQPIGS(rawResult)
+        result = parseQPIGS(rawResult)
     elif cmd == 'QMOD':
-        return parseQMOD(rawResult)
-    return rawResult
+        result = parseQMOD(rawResult)
+    result['server_time'] = datetime.now().isoformat()
+    return result
 
 # First response = (NAKss
 # sendCommand(getCommand('QPIWS'))
@@ -41,11 +52,11 @@ def sendCommand(dev, cmd):
 # sendCommand(getCommand('QMOD'))
 
 # String QPIGS = "\x51\x50\x49\x47\x53\xB7\xA9\x0D";
-# String QPIWS = "\x51\x50\x49\x57\x53\xB4\xDA\x0D";  
+# String QPIWS = "\x51\x50\x49\x57\x53\xB4\xDA\x0D";
 # String QDI = "\x51\x44\x49\x71\x1B\x0D";
-# String QMOD = "\x51\x4D\x4F\x44\x49\xC1\x0D"; 
-# String QVFW =  "\x51\x56\x46\x57\x62\x99\x0D"; 
-# String QVFW2 = "\x51\x56\x46\x57\x32\xC3\xF5\x0D"; 
+# String QMOD = "\x51\x4D\x4F\x44\x49\xC1\x0D";
+# String QVFW =  "\x51\x56\x46\x57\x62\x99\x0D";
+# String QVFW2 = "\x51\x56\x46\x57\x32\xC3\xF5\x0D";
 # responseString = getResult()
 # print(responseString)
 # print(len(responseString))
@@ -83,7 +94,6 @@ def sendCommand(dev, cmd):
 #         parameter = parameter[1:]
 #     print("{} : {} => {}".format(currentIndex + 1 , parameterMappings[currentIndex], parameter))
 #     currentIndex +=1
-
 
 
 """

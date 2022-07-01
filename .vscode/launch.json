@@ -18,6 +18,20 @@
                   "remoteRoot": "/root/projects/ru.py" // To current working directory ~/project1
                 }
               ]
-          }
+          },
+          { // https://code.visualstudio.com/docs/python/debugging#_flask-debugging
+            "name": "Python: Flask",
+            "type": "python",
+            "request": "launch",
+            "module": "flask",
+            "env": {
+                "FLASK_APP": "${workspaceFolder}/inverter-api/app.py"
+            },
+            "args": [
+                "run",
+                "--no-debugger"
+            ],
+            "jinja": true
+        },
     ]
 }
