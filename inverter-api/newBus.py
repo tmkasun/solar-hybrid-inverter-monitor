@@ -52,9 +52,9 @@ def getResult(timeout=600):
 # sendCommand(getCommand('PCP03')) # Solar only
 
  # Setting device output source priority
-# sendCommand(getCommand('POP01')) # Solar first
+sendCommand(getCommand('POP01')) # Solar first
 # sendCommand(getCommand('POP02')) # SBU
-sendCommand(getCommand('POP00')) # Utility first
+# sendCommand(getCommand('POP00')) # Utility first
 
 # setting Battery voltage back to battery PBDV<nn.n><cr>: Battery voltage back to battery
 
