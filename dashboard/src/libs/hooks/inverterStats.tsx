@@ -23,7 +23,7 @@ export const minMaxMap: { [key: number]: [number, number] } = {
 };
 import { useQuery } from 'react-query';
 const API_BASE_PATH =
-    'https://c65f16f4-836b-47d2-9c70-538ee54dfd7d-prod.e1-us-east-azure.choreoapis.dev/pvkl/inverter/1.0.0';
+    'https://f7238e44-a8b9-4db0-aefe-b6dfc970b0aa-dev.e1-us-east-azure.choreoapis.dev/usqi/inverter/1.0.0';
 export default function useInverterLiveStats() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [reFetchInt, setReFetchInt] = useState(1000);
