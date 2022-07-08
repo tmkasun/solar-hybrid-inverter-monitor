@@ -1,6 +1,42 @@
 ACK = "ACK"
 NACK = "NAK"
 
+def parseQPIWS(responseString):
+    paddingRemoved = responseString[1:]
+    if len(paddingRemoved) >= 28:
+        return {
+            "PV loss": paddingRemoved[0],
+            "Inverter fault": paddingRemoved[1],
+            "Bus Over": paddingRemoved[2],
+            "Bus Under": paddingRemoved[3],
+            "Bus Soft Fail": paddingRemoved[4],
+            "LINE_FAIL": paddingRemoved[5],
+            "OPVShort": paddingRemoved[6],
+            "Inverter voltage too low": paddingRemoved[7],
+            "Inverter voltage too high": paddingRemoved[8],
+            "Over temperature": paddingRemoved[9],
+            "Fan locked": paddingRemoved[10],
+            "Battery voltage high": paddingRemoved[11],
+            "Battery low alarm": paddingRemoved[12],
+            "Reserved": paddingRemoved[13],
+            "Battery under shutdown": paddingRemoved[14],
+            "Battery derating": paddingRemoved[15],
+            "Over load": paddingRemoved[16],
+            "EEPROM Fault": paddingRemoved[17],
+            "Inverter Over Current": paddingRemoved[18],
+            "Inverter Soft Fail": paddingRemoved[19],
+            "Self Test Fail": paddingRemoved[20],
+            "OP DC Voltage Over": paddingRemoved[21],
+            "Battery Open": paddingRemoved[22],
+            "Current Sensor Fail": paddingRemoved[23],
+            "Battery Short": paddingRemoved[24],
+            "Power limit": paddingRemoved[25],
+            "PV voltage high": paddingRemoved[26],
+            "MPPT overload fault": paddingRemoved[28],
+        }
+    else:
+        return {}
+
 # Setting device output source priority
 
 

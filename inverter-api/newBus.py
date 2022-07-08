@@ -52,7 +52,7 @@ def getResult(timeout=600):
 # Setting device charge priority
 # sendCommand(getCommand('PCP01')) # Solar first
 # sendCommand(getCommand('PCP02')) # Solar & Utility
-# sendCommand(getCommand('PCP03')) # Solar only
+sendCommand(getCommand('PCP03')) # Solar only
 
  # Setting device output source priority
 # sendCommand(getCommand('POP01')) # Solar first

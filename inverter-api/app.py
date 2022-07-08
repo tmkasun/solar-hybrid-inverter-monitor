@@ -28,6 +28,13 @@ def inverterMode():
     return json.dumps(responseString)
 
 
+@app.route('/stats/errors')
+def inverterErrors():
+    responseString = Inverter.getQPIWS()
+    print(responseString)
+    return json.dumps(responseString)
+
+
 @app.route('/device/mode/charging', methods=['POST'])
 def inverterSetCMode():
     payload = request.get_json()
@@ -44,4 +51,4 @@ def inverterSetOutMode():
     print(responseString)
     return json.dumps(responseString)
 
-app.run()
+# app.run()

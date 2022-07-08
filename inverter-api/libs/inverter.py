@@ -23,6 +23,14 @@ class Inverter(object):
         Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
         Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
 
+
+    """
+     Device Warning Status inquiry
+    """
+    @staticmethod
+    def getQPIWS():
+        return sendCommand(dev, "QPIWS")
+
     @staticmethod
     def getQMOD():
         Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')

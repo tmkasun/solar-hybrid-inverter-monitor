@@ -1,5 +1,5 @@
 from datetime import datetime
-from .parsers import parseQPIGS, parseQMOD, parsePCP, parsePOP
+from .parsers import parseQPIGS, parseQMOD, parsePCP, parsePOP, parseQPIWS
 import crc16
 import usb.core
 from multiprocessing import Lock
@@ -45,6 +45,8 @@ def sendCommand(dev, cmd):
         result = parsePCP(rawResult)
     elif cmd.startswith("POP"):
         result = parsePOP(rawResult)
+    elif cmd == 'QPIWS':
+        result = parseQPIWS(rawResult)
     result['server_time'] = datetime.now().isoformat()
     return result
 
