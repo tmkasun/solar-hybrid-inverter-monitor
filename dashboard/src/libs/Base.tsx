@@ -9,6 +9,7 @@ import Link from '@mui/material/Link';
 import DiagramVsGauges from './components/DiagramVsGauges';
 import SummaryView from './components/SummaryView';
 import { useInverterMode } from './hooks/inverterStats';
+import ErrorsAndSettings from './components/ErrorsAndSettings';
 
 function ElevationScroll(props: {
     children: ReactElement<any, string | JSXElementConstructor<any>>;
@@ -45,6 +46,7 @@ export default function HideAppBar(props: any) {
                         <Typography sx={{ flexGrow: 1 }} variant="h6">
                             Inverter Stats
                         </Typography>
+                        <ErrorsAndSettings />
                         <DiagramVsGauges />
                         <SummaryView
                             isModeLoading={isModeLoading}

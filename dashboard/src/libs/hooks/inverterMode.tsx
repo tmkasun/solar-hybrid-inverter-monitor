@@ -1,26 +1,4 @@
 import React, { useEffect, useState } from 'react';
-export const minMaxMap: { [key: number]: [number, number] } = {
-    0: [200, 260], // GV
-    1: [45, 55], // GF
-    2: [210, 250], // OV
-    3: [45, 55], // OF
-    4: [0, 2500], // OVA
-    5: [0, 3000], // OPW
-    6: [0, 100], // OL
-    7: [0, 500], // BUS voltage
-    8: [24.5, 27.5], // BV
-    9: [0, 50], // BCC
-    10: [0, 100], // BatteryCap
-    11: [0, 45], // Heat sink temp 
-    12: [0, 30], // ICB
-    13: [0, 50], // PV Voltage
-    14: [24, 27.5], // BatteryV from SCC
-    15: [0, 120], // Battery Discharge I
-    16: [0, 1000], // Stats
-    17: [0, 1000], // Battery fan offset I
-    18: [0, 5], // EEPROM Version
-    19: [0, 1000], // PV Power
-};
 import { useQuery } from 'react-query';
 import { API_BASE_PATH } from '../components/consts';
 

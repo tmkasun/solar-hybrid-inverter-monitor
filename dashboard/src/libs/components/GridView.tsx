@@ -9,11 +9,12 @@ import {
 import React from 'react';
 import Gauge from '../Gauge';
 import { minMaxMap } from '../hooks/inverterStats';
+import BatteryGrid from './BatteryGrid';
 import TemperatureGauge from './TemperatureGauge';
 
 type GridViewProps = {
     isLoading: boolean;
-    data: any;
+    data: { [key: string]: string };
 };
 
 function GridView({ isLoading, data }: GridViewProps) {
@@ -59,11 +60,21 @@ function GridView({ isLoading, data }: GridViewProps) {
         [pvv, pvvValue], // 13
         [batVSCC, batVSCCValue], // 14
         [batDI, batDIValue], // 15
-        ,
+        [deviceStatus, deviceStatusValue], // 16
         [fvov, fvovValue], // 17
         [eepromV, eepromVValue], // 18
         [pvp, pvpValue], // 19
     ] = parameters;
+    const batteryProps = {
+        batVValue,
+        bccValue,
+        bcValue,
+        batDIValue,
+        bcc,
+        batV,
+        bc,
+        batDI,
+    };
     return (
         <Grid
             container
@@ -191,39 +202,7 @@ function GridView({ isLoading, data }: GridViewProps) {
                 alignItems="center"
             >
                 <Grid item xs={12} md={8}>
-                    <Paper elevation={7}>
-                        Battery
-                        <Box
-                            flexWrap="wrap"
-                            display="flex"
-                            justifyContent="space-around"
-                            alignItems="center"
-                            flexDirection="row"
-                        >
-                            <Gauge
-                                minMax={minMaxMap[8]}
-                                value={Number(batVValue)}
-                                name={batV}
-                                unit="V"
-                            />
-                            <Gauge
-                                minMax={minMaxMap[15]}
-                                value={Number(batDIValue)}
-                                name={batDI}
-                            />
-                            <Gauge
-                                minMax={minMaxMap[9]}
-                                value={Number(bccValue)}
-                                name={bcc}
-                            />
-
-                            <Gauge
-                                minMax={minMaxMap[10]}
-                                value={Number(bcValue)}
-                                name={bc}
-                            />
-                        </Box>
-                    </Paper>
+                    <BatteryGrid parameters={parameters} {...batteryProps} />
                 </Grid>
             </Grid>
         </Grid>

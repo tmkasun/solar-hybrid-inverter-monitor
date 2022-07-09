@@ -23,7 +23,7 @@ type SummaryViewProps = {
     data: any;
 };
 
-const blinkerAnimation = keyframes`
+export const blinkerAnimation = keyframes`
     50% {
       opacity: 0;
     }
@@ -33,9 +33,8 @@ function SummaryView({
     lastUpdated,
     isFetching,
     isModeLoading,
-    data
+    data,
 }: SummaryViewProps) {
-
     return (
         <Box
             display="flex"
