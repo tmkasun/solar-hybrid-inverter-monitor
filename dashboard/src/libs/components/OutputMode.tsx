@@ -11,7 +11,7 @@ import Box from '@mui/system/Box';
 export default function OutputMode() {
     const [mode, setMode] = React.useState('');
     const mutation = useMutation<any, any, string>(async (newMode) => {
-        const response = await fetch(`${API_BASE_PATH}/mode/output`, {
+        const response = await fetch(`${API_BASE_PATH}/device/mode/output`, {
             headers: {
                 'Content-Type': 'application/json',
             },
