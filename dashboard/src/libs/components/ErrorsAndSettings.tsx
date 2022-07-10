@@ -6,6 +6,7 @@ import IconButton from '@mui/material/IconButton';
 import SettingsIcon from '@mui/icons-material/Settings';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import Settings from './Settings';
+import Notifications from './Notifications';
 
 export default function ErrorsAndSettings() {
     const { currentView, setView } = useAppView();
@@ -23,6 +24,7 @@ export default function ErrorsAndSettings() {
         exclusive: true,
     };
     const [openSettings, setOpenSettings] = React.useState(false);
+    const [openNotifications, setOpenNotifications] = React.useState(false);
 
     return (
         <Box>
@@ -35,6 +37,7 @@ export default function ErrorsAndSettings() {
                     <SettingsIcon />
                 </IconButton>
                 <IconButton
+                    onClick={() => setOpenNotifications(true)}
                     sx={{ background: 'white' }}
                     aria-label="notifications"
                 >
@@ -44,6 +47,10 @@ export default function ErrorsAndSettings() {
             <Settings
                 handleClose={() => setOpenSettings(false)}
                 open={openSettings}
+            />
+            <Notifications
+                open={openNotifications}
+                handleClose={() => setOpenNotifications(false)}
             />
         </Box>
     );
