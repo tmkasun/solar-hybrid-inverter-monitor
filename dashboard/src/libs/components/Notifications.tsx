@@ -11,7 +11,7 @@ import { blinkerAnimation } from './SummaryView';
 import Divider from '@mui/material/Divider';
 import { useQuery } from 'react-query';
 import { API_BASE_PATH } from './consts';
-import { CircularProgress } from '@mui/material';
+import { Alert, CircularProgress } from '@mui/material';
 
 type NotificationsProps = {
     open: boolean;
@@ -40,6 +40,10 @@ export default function Notifications({
             return data;
         }
     );
+    let errors: [string, string][] = [];
+    if(data) {
+        errors = Object.entries<string>(data).filter(([key, value]) => value === '1');
+    }
     return (
         <Dialog
             fullScreen={fullScreen}
@@ -61,7 +65,11 @@ export default function Notifications({
                     {isLoading && !data ? (
                         <CircularProgress />
                     ) : (
-                        Object.entries(data).map(
+                        errors.length === 0 ? (
+                            <Alert variant='outlined' severity='success'>
+                                No errors or warnings detected.
+                            </Alert>
+                        ) : errors.map(
                             ([key, value]) =>
                                 value === '1' && (
                                     <Box
