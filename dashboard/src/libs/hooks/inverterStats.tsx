@@ -11,7 +11,7 @@ export const minMaxMap: { [key: number]: [number, number] } = {
     8: [24.5, 27.5], // BV
     9: [0, 50], // BCC
     10: [0, 100], // BatteryCap
-    11: [0, 45], // Heat sink temp 
+    11: [0, 45], // Heat sink temp
     12: [0, 30], // ICB
     13: [0, 50], // PV Voltage
     14: [24, 27.5], // BatteryV from SCC
