@@ -12,6 +12,11 @@ Currently we have tested this on
 
 - Sako Isun 3KW
 
+## Architecture
+
+![image](https://user-images.githubusercontent.com/3313885/183017670-f027325f-fb5c-4645-b5d4-90bd5cbdce0d.png)
+
+
 ## Supported compute devices
 
 - Raspberry pi
