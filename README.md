@@ -93,10 +93,24 @@ Add a `Udev` rule as shown below, This is required to allow communicating with t
 references/99-knnect.rules
 ```
 in this repo
-- > sudo vim /etc/udev/rules.d/99-<any-name>.rules
+- > sudo vim /etc/udev/rules.d/99-\<any-name\>.rules
 
+example
+  ```
+  sudo cp references/99-knnect.rules /etc/udev/rules.d/
+  ```
+  
 Restart the Udev admin to apply the changes
 - > sudo udevadm control --reload-rules && sudo udevadm trigger
+
+  
+## Deploying the REST API
+
+  Need following 2 packages
+  
+  ```
+  python -m pip install flask gunicorn
+  ```
 
 ## Accessing from anyway
 
