@@ -72,7 +72,8 @@ We use `Flask` to implement REST API and ReactJS, MUI , React Query in the UIs.
 
 ## Install
 Most of the Raspberry pi & Orange Pi variations doesn't come with `pip` pre-installed, Hence we have to run this 
-- > sudo apt-get install python3-pip
+- > Use the installation methods specify in the [official doc](https://pip.pypa.io/en/stable/installation/)
+- > or use `sudo apt-get install python3-pip`
 
 Install the Python USB communication library
 - > python3 -m pip install pyusb
