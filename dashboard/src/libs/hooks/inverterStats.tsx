@@ -1,4 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery } from 'react-query';
+
+import { API_BASE_PATH } from '../components/consts';
+
 export const minMaxMap: { [key: number]: [number, number] } = {
     0: [200, 260], // GV
     1: [45, 55], // GF
@@ -21,8 +25,6 @@ export const minMaxMap: { [key: number]: [number, number] } = {
     18: [0, 5], // EEPROM Version
     19: [0, 1000], // PV Power
 };
-import { useQuery } from 'react-query';
-import { API_BASE_PATH } from '../components/consts';
 
 export default function useInverterLiveStats() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
