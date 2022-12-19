@@ -9,7 +9,7 @@
             "type": "python",
             "request": "attach",
             "connect": {
-              "host": "192.168.1.158", // replace this with remote machine name
+              "host": "localhost", // replace this with remote machine name
               "port": 5678
             },
             "pathMappings": [
