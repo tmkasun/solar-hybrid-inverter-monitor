@@ -1,0 +1,105 @@
+# tmkasun me API configs
+upstream energy_api_app {
+    # for UNIX domain socket setups
+    server localhost:8000 fail_timeout=0;
+}
+
+# https://learn.netdata.cloud/docs/agent/running-behind-nginx
+upstream netdata {
+    server 127.0.0.1:19999;
+    keepalive 64;
+}
+
+server {
+
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name apis.knnect.com;
+    access_log /var/log/nginx/home.proxy.log;
+    ssl_certificate /etc/letsencrypt/live/apis.knnect.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/apis.knnect.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+    location / {
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' 'https://energy.knnect.com';
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT';
+            #
+            # Custom headers and headers various browsers *should* be OK with but aren't
+            #
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+            #
+            # Tell client that this pre-flight info is valid for 20 days
+            #
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        if ($request_method = 'POST') {
+            add_header 'Access-Control-Allow-Origin' 'https://energy.knnect.com' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+        }
+        if ($request_method = 'GET') {
+            add_header 'Access-Control-Allow-Origin' 'https://energy.knnect.com' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+        }
+
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $http_host;
+        # we don't want nginx trying to do something clever with
+        # redirects, we set the Host: header above already.
+        proxy_redirect off;
+        proxy_pass http://energy_api_app;
+    }
+
+
+    #ssl_session_timeout 5m;
+    # ssl_protocols  SSLv2 SSLv3 TLSv1; # Old protocols
+    location = /netdata {
+        return 301 /netdata/;
+    }
+
+    location ~ /netdata/(?<ndpath>.*) {
+        proxy_redirect off;
+        proxy_set_header Host $host;
+
+
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Server $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_pass_request_headers on;
+        proxy_set_header Connection "keep-alive";
+        proxy_store off;
+        # auth_basic "Restricted Content";
+        # Creating htpasswd https://docs.nginx.com/nginx/admin-guide/security-controls/configuring-http-basic-authentication/
+        # auth_basic_user_file /etc/nginx/.htpasswd;
+
+        proxy_pass http://netdata/$ndpath$is_args$args;
+
+        gzip on;
+        gzip_proxied any;
+        gzip_types *;
+    }
+}
+
+server {
+    if ($host = apis.knnect.com) {
+        return 301 https://$host$request_uri;
+        } # managed by Certbot
+
+
+        listen 80;
+        server_name apis.knnect.com;
+        return 404; # managed by Certbot
+
+
+    }

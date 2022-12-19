@@ -50,7 +50,7 @@ Setting device charge priority
 
 
 def parsePCP(responseString):
-    print(responseString)
+    # print(responseString)
     paddingRemoved = responseString[1:]
     if paddingRemoved.startswith(ACK):
         return {"accept": True}
@@ -80,11 +80,11 @@ Device general status parameters inquiry
 
 
 def parseQPIGS(responseString):
-    print(responseString)
-    print(len(responseString))
+    # print(responseString)
+    # print(len(responseString))
     # assert False
     inverterParameters = responseString.split(' ')
-    print(len(inverterParameters))
+    # print(len(inverterParameters))
 
     parameterMappings = [
         'Grid Voltage',
@@ -115,8 +115,8 @@ def parseQPIGS(responseString):
     for parameter in inverterParameters:
         if currentIndex == 0:
             parameter = parameter[1:]
-        print("{} : {} => {}".format(currentIndex + 1,
-                                     parameterMappings[currentIndex], parameter))
+        # print("{} : {} => {}".format(currentIndex + 1,
+        #                              parameterMappings[currentIndex], parameter))
         if currentIndex == 16:
             # 8 bit status flags
             deviceStatus = {
