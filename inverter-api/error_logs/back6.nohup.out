@@ -1,0 +1,302 @@
+[2023-01-07 12:45:00 +0000] [228548] [INFO] Starting gunicorn 20.1.0
+[2023-01-07 12:45:00 +0000] [228548] [INFO] Listening at: http://0.0.0.0:8000 (228548)
+[2023-01-07 12:45:00 +0000] [228548] [INFO] Using worker: sync
+[2023-01-07 12:45:00 +0000] [228551] [INFO] Booting worker with pid: 228551
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-01-08 02:29:12 +0000] [228551] [INFO] Parent changed, shutting down: <Worker 228551>
+[2023-01-08 02:29:12 +0000] [228551] [INFO] Worker exiting (pid: 228551)
+[2023-01-08 02:29:23 +0000] [282668] [INFO] Starting gunicorn 20.1.0
+[2023-01-08 02:29:23 +0000] [282668] [INFO] Listening at: http://0.0.0.0:8000 (282668)
+[2023-01-08 02:29:23 +0000] [282668] [INFO] Using worker: sync
+[2023-01-08 02:29:23 +0000] [282671] [INFO] Booting worker with pid: 282671
+[2023-01-08 12:51:27 +0000] [282668] [WARNING] Worker with pid 282671 was terminated due to signal 9
+[2023-01-08 12:51:27 +0000] [337077] [INFO] Booting worker with pid: 337077
+[2023-01-08 12:51:39 +0000] [337103] [INFO] Starting gunicorn 20.1.0
+[2023-01-08 12:51:39 +0000] [337103] [ERROR] Connection in use: ('0.0.0.0', 8000)
+[2023-01-08 12:51:39 +0000] [337103] [ERROR] Retrying in 1 second.
+[2023-01-08 12:51:40 +0000] [337103] [ERROR] Connection in use: ('0.0.0.0', 8000)
+[2023-01-08 12:51:40 +0000] [337103] [ERROR] Retrying in 1 second.
+[2023-01-08 12:51:41 +0000] [337103] [ERROR] Connection in use: ('0.0.0.0', 8000)
+[2023-01-08 12:51:41 +0000] [337103] [ERROR] Retrying in 1 second.
+[2023-01-08 12:51:42 +0000] [337103] [ERROR] Connection in use: ('0.0.0.0', 8000)
+[2023-01-08 12:51:42 +0000] [337103] [ERROR] Retrying in 1 second.
+[2023-01-08 12:51:43 +0000] [337103] [ERROR] Connection in use: ('0.0.0.0', 8000)
+[2023-01-08 12:51:43 +0000] [337103] [ERROR] Retrying in 1 second.
+[2023-01-08 12:51:43 +0000] [337077] [INFO] Parent changed, shutting down: <Worker 337077>
+[2023-01-08 12:51:43 +0000] [337077] [INFO] Worker exiting (pid: 337077)
+[2023-01-08 12:51:44 +0000] [337103] [ERROR] Can't connect to ('0.0.0.0', 8000)
+[2023-01-08 12:59:28 +0000] [1866] [INFO] Starting gunicorn 20.1.0
+[2023-01-08 12:59:28 +0000] [1866] [INFO] Listening at: http://0.0.0.0:8000 (1866)
+[2023-01-08 12:59:28 +0000] [1866] [INFO] Using worker: sync
+[2023-01-08 12:59:28 +0000] [1868] [INFO] Booting worker with pid: 1868
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-01-09 07:58:01 +0000] [1866] [INFO] Handling signal: term
+[2023-01-09 07:58:01 +0000] [1866] [WARNING] Worker with pid 1868 was terminated due to signal 1
+[2023-01-09 07:58:01 +0000] [1866] [INFO] Shutting down: Master
+[2023-01-09 07:58:45 +0000] [1682] [INFO] Starting gunicorn 20.1.0
+[2023-01-09 07:58:45 +0000] [1682] [INFO] Listening at: http://0.0.0.0:8000 (1682)
+[2023-01-09 07:58:45 +0000] [1682] [INFO] Using worker: sync
+[2023-01-09 07:58:45 +0000] [1685] [INFO] Booting worker with pid: 1685
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 24, in getAll
+    Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 43, in sendCommand
+    result = parseQMOD(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 63, in parseQMOD
+    if responseString[1].lower() == 'b':
+IndexError: string index out of range
+[2023-01-12 11:53:16 +0000] [1682] [INFO] Handling signal: term
+[2023-01-12 11:53:16 +0000] [1685] [INFO] Worker exiting (pid: 1685)
+[2023-01-12 11:53:16 +0000] [1682] [WARNING] Worker with pid 1685 was terminated due to signal 1
+[2023-01-12 11:53:16 +0000] [1682] [INFO] Shutting down: Master
+[2023-01-12 11:56:38 +0000] [2261] [INFO] Starting gunicorn 20.1.0
+[2023-01-12 11:56:38 +0000] [2261] [INFO] Listening at: http://0.0.0.0:8000 (2261)
+[2023-01-12 11:56:38 +0000] [2261] [INFO] Using worker: sync
+[2023-01-12 11:56:38 +0000] [2263] [INFO] Booting worker with pid: 2263
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 24, in getAll
+    Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 43, in sendCommand
+    result = parseQMOD(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 63, in parseQMOD
+    if responseString[1].lower() == 'b':
+IndexError: string index out of range
+[2023-01-16 01:54:08 +0000] [2261] [INFO] Handling signal: term
+[2023-01-16 01:54:08 +0000] [2261] [WARNING] Worker with pid 2263 was terminated due to signal 1
+[2023-01-16 01:54:08 +0000] [2261] [INFO] Shutting down: Master
+[2023-01-16 01:54:52 +0000] [2020] [INFO] Starting gunicorn 20.1.0
+[2023-01-16 01:54:52 +0000] [2020] [INFO] Listening at: http://0.0.0.0:8000 (2020)
+[2023-01-16 01:54:52 +0000] [2020] [INFO] Using worker: sync
+[2023-01-16 01:54:52 +0000] [2029] [INFO] Booting worker with pid: 2029
+[2023-01-16 01:55:23 +0000] [2020] [CRITICAL] WORKER TIMEOUT (pid:2029)
+[2023-01-16 01:55:23 +0000] [2029] [INFO] Worker exiting (pid: 2029)
+[2023-01-16 01:55:24 +0000] [2020] [WARNING] Worker with pid 2029 was terminated due to signal 9
+[2023-01-16 01:55:24 +0000] [2091] [INFO] Booting worker with pid: 2091
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-01-16 15:00:24 +0000] [2020] [INFO] Handling signal: term
+[2023-01-16 15:00:24 +0000] [2020] [WARNING] Worker with pid 2091 was terminated due to signal 1
+[2023-01-16 15:00:24 +0000] [2020] [INFO] Shutting down: Master
+[2023-01-17 12:50:09 +0000] [104131] [INFO] Starting gunicorn 20.1.0
+[2023-01-17 12:50:09 +0000] [104131] [INFO] Listening at: http://0.0.0.0:8000 (104131)
+[2023-01-17 12:50:09 +0000] [104131] [INFO] Using worker: sync
+[2023-01-17 12:50:09 +0000] [104134] [INFO] Booting worker with pid: 104134
+[2023-01-17 12:50:51 +0000] [104131] [INFO] Handling signal: term
+[2023-01-17 12:50:51 +0000] [104134] [INFO] Worker exiting (pid: 104134)
+[2023-01-17 12:50:51 +0000] [104131] [WARNING] Worker with pid 104134 was terminated due to signal 1
+[2023-01-17 12:50:51 +0000] [104131] [INFO] Shutting down: Master
+[2023-01-17 12:52:24 +0000] [2098] [INFO] Starting gunicorn 20.1.0
+[2023-01-17 12:52:24 +0000] [2098] [INFO] Listening at: http://0.0.0.0:8000 (2098)
+[2023-01-17 12:52:24 +0000] [2098] [INFO] Using worker: sync
+[2023-01-17 12:52:24 +0000] [2106] [INFO] Booting worker with pid: 2106
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 24, in getAll
+    Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 43, in sendCommand
+    result = parseQMOD(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 63, in parseQMOD
+    if responseString[1].lower() == 'b':
+IndexError: string index out of range
+[2023-01-22 14:37:58 +0000] [553238] [INFO] Starting gunicorn 20.1.0
+[2023-01-22 14:37:58 +0000] [553238] [INFO] Listening at: http://0.0.0.0:8000 (553238)
+[2023-01-22 14:37:58 +0000] [553238] [INFO] Using worker: sync
+[2023-01-22 14:37:58 +0000] [553241] [INFO] Booting worker with pid: 553241
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 24, in getAll
+    Inverter.QMOD_RAW = sendCommand(dev, 'QMOD')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 43, in sendCommand
+    result = parseQMOD(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 63, in parseQMOD
+    if responseString[1].lower() == 'b':
+IndexError: string index out of range
+[2023-01-22 14:38:48 +0000] [553241] [INFO] Worker exiting (pid: 553241)
+[2023-01-22 14:38:48 +0000] [553238] [INFO] Handling signal: term
+[2023-01-22 14:38:48 +0000] [553238] [WARNING] Worker with pid 553241 was terminated due to signal 1
+[2023-01-22 14:38:48 +0000] [553238] [INFO] Shutting down: Master
+[2023-01-22 15:06:25 +0000] [3453] [INFO] Starting gunicorn 20.1.0
+[2023-01-22 15:06:25 +0000] [3453] [INFO] Listening at: http://0.0.0.0:8000 (3453)
+[2023-01-22 15:06:25 +0000] [3453] [INFO] Using worker: sync
+[2023-01-22 15:06:25 +0000] [3455] [INFO] Booting worker with pid: 3455
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-01-24 09:19:50 +0000] [3453] [INFO] Handling signal: term
+[2023-01-24 09:19:50 +0000] [3453] [WARNING] Worker with pid 3455 was terminated due to signal 1
+[2023-01-24 09:19:51 +0000] [3453] [INFO] Shutting down: Master
+[2023-01-25 12:29:57 +0000] [1881] [INFO] Starting gunicorn 20.1.0
+[2023-01-25 12:29:57 +0000] [1881] [INFO] Listening at: http://0.0.0.0:8000 (1881)
+[2023-01-25 12:29:57 +0000] [1881] [INFO] Using worker: sync
+[2023-01-25 12:29:57 +0000] [1884] [INFO] Booting worker with pid: 1884
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-01-26 11:47:36 +0000] [1881] [INFO] Handling signal: term
+[2023-01-26 11:47:36 +0000] [1881] [WARNING] Worker with pid 1884 was terminated due to signal 1
+[2023-01-26 11:47:36 +0000] [1881] [INFO] Shutting down: Master
+[2023-01-26 11:58:14 +0000] [2315] [INFO] Starting gunicorn 20.1.0
+[2023-01-26 11:58:14 +0000] [2315] [INFO] Listening at: http://0.0.0.0:8000 (2315)
+[2023-01-26 11:58:14 +0000] [2315] [INFO] Using worker: sync
+[2023-01-26 11:58:14 +0000] [2317] [INFO] Booting worker with pid: 2317
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-01-29 13:37:45 +0000] [2315] [INFO] Handling signal: term
+[2023-01-29 13:37:45 +0000] [2315] [WARNING] Worker with pid 2317 was terminated due to signal 1
+[2023-01-29 13:37:45 +0000] [2315] [INFO] Shutting down: Master
+[2023-01-29 13:39:36 +0000] [1795] [INFO] Starting gunicorn 20.1.0
+[2023-01-29 13:39:36 +0000] [1795] [INFO] Listening at: http://0.0.0.0:8000 (1795)
+[2023-01-29 13:39:36 +0000] [1795] [INFO] Using worker: sync
+[2023-01-29 13:39:36 +0000] [1798] [INFO] Booting worker with pid: 1798
+[2023-01-29 13:41:19 +0000] [1924] [INFO] Starting gunicorn 20.1.0
+[2023-01-29 13:41:19 +0000] [1924] [INFO] Listening at: http://0.0.0.0:8000 (1924)
+[2023-01-29 13:41:19 +0000] [1924] [INFO] Using worker: sync
+[2023-01-29 13:41:19 +0000] [1927] [INFO] Booting worker with pid: 1927
+[2023-01-29 13:42:19 +0000] [1924] [CRITICAL] WORKER TIMEOUT (pid:1927)
+[2023-01-29 13:42:19 +0000] [1927] [INFO] Worker exiting (pid: 1927)
+[2023-01-29 13:42:20 +0000] [1924] [WARNING] Worker with pid 1927 was terminated due to signal 9
+[2023-01-29 13:42:20 +0000] [1996] [INFO] Booting worker with pid: 1996
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-02-06 03:43:15 +0000] [1924] [INFO] Handling signal: term
+[2023-02-06 03:43:15 +0000] [1924] [WARNING] Worker with pid 1996 was terminated due to signal 1
+[2023-02-06 03:43:15 +0000] [1924] [INFO] Shutting down: Master
+[2023-02-06 03:49:05 +0000] [2000] [INFO] Starting gunicorn 20.1.0
+[2023-02-06 03:49:05 +0000] [2000] [INFO] Listening at: http://0.0.0.0:8000 (2000)
+[2023-02-06 03:49:05 +0000] [2000] [INFO] Using worker: sync
+[2023-02-06 03:49:05 +0000] [2003] [INFO] Booting worker with pid: 2003
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/set_interval.py", line 20, in __setInterval
+    self.action()
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/inverter.py", line 23, in getAll
+    Inverter.QPIGS_RAW = sendCommand(dev, 'QPIGS')
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/utils.py", line 41, in sendCommand
+    result = parseQPIGS(rawResult)
+  File "/home/ubuntu/projects/solar-hybrid-inverter-monitor/inverter-api/libs/parsers.py", line 173, in parseQPIGS
+    data[parameterMappings[currentIndex]] = parameter
+IndexError: list index out of range
+[2023-02-08 03:50:58 +0000] [2000] [INFO] Handling signal: term
+[2023-02-08 03:50:58 +0000] [2000] [WARNING] Worker with pid 2003 was terminated due to signal 1
+[2023-02-08 03:50:58 +0000] [2000] [INFO] Shutting down: Master
