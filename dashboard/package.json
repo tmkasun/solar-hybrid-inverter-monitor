@@ -27,7 +27,7 @@
     "react-leaflet": "^3.2.1",
     "react-leaflet-markercluster": "^3.0.0-rc1",
     "react-query": "^3.39.1",
-    "react-scripts": "^4.0.3"
+    "react-scripts": "^5.0.1"
   },
   "devDependencies": {
     "@babel/runtime": "7.13.8",
@@ -39,7 +39,7 @@
   },
   "scripts": {
     "start": "HTTPS=true react-scripts start",
-    "build": "react-scripts build",
+    "build": "GENERATE_SOURCEMAP=true react-scripts build",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject"
   },
