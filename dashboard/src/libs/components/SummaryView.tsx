@@ -50,9 +50,9 @@ function SummaryView({
                 {isModeLoading ? (
                     <Skeleton variant="rectangular" width={30} />
                 ) : (
-                    <Tooltip title={data && data.mode}>
+                    <Tooltip title={data && data.mode || 'No text'}>
                         {/* TODO: tmkasun add standby, Fault, Bypass modes */}
-                        {data && data.mode.toLocaleLowerCase() === 'battery' ? (
+                        {data && data.mode && data.mode.toLocaleLowerCase() === 'battery' ? (
                             <BatteryChargingFullIcon
                                 sx={{
                                     animation: `${blinkerAnimation} 1s linear infinite`,

@@ -15,6 +15,7 @@ import GridView from './libs/components/GridView';
 import DiagramView from './libs/components/DiagramView';
 import AppViewsProvider from './data/hooks/AppView';
 import { AppViews } from './libs/components/consts';
+import CommonErrorBoundary from './libs/components/ErrorBoundary';
 
 const SectionSeperator = () => (
     <Grid item sm={12}>
@@ -30,15 +31,17 @@ const App = () => {
     const [view, setView] = React.useState<AppViews>(AppViews.Grid);
 
     return (
-        <AppViewsProvider value={{ currentView: view, setView }}>
-            <Base isFetching={isFetching} lastUpdated={lastUpdated}>
-                <PageError open={isError} error={error} />
-                {view === AppViews.Grid && (
-                    <GridView isLoading={isLoading} data={data} />
-                )}
-                {view === AppViews.Diagram && data && <DiagramView />}
-            </Base>
-        </AppViewsProvider>
+        <CommonErrorBoundary>
+            <AppViewsProvider value={{ currentView: view, setView }}>
+                <Base isFetching={isFetching} lastUpdated={lastUpdated}>
+                    <PageError open={isError} error={error} />
+                    {view === AppViews.Grid && (
+                        <GridView isLoading={isLoading} data={data} />
+                    )}
+                    {view === AppViews.Diagram && data && <DiagramView />}
+                </Base>
+            </AppViewsProvider>
+        </CommonErrorBoundary>
     );
 };
 

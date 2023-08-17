@@ -42,7 +42,10 @@ function GridView({ isLoading, data }: GridViewProps) {
             </Grid>
         );
     }
-    const parameters = Object.entries(data);
+    let parameters = Object.entries(data);
+    if (parameters.length !== 20) {
+        parameters = new Array(20).fill(null).map(() => ["", ""])
+    }
     const [
         [gv, gvValue], // 0
         [gf, gfValue], // 1

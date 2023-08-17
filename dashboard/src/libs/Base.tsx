@@ -27,7 +27,7 @@ function ElevationScroll(props: {
 export default function HideAppBar(props: any) {
     const { children, isFetching, lastUpdated } = props;
     const { data, isLoading: isModeLoading, isError } = useInverterMode();
-
+    const inverterNotFunctional = data && !data.mode && data.raw;
     return (
         <>
             <CssBaseline />
@@ -37,14 +37,14 @@ export default function HideAppBar(props: any) {
                     sx={{
                         backdropFilter: 'blur(4px)',
                         backgroundColor:
-                            data && data.mode.toLocaleLowerCase() === 'battery'
+                            data && data.mode ? data.mode.toLocaleLowerCase() === 'battery'
                                 ? 'orange'
-                                : '#0071adbd',
+                                : '#0071adbd' : 'red'
                     }}
                 >
                     <Toolbar>
                         <Typography sx={{ flexGrow: 1 }} variant="h6">
-                            Inverter Stats
+                            Inverter Stats {inverterNotFunctional && "*** Inverter is not functional! ***"}
                         </Typography>
                         <ErrorsAndSettings />
                         <DiagramVsGauges />
