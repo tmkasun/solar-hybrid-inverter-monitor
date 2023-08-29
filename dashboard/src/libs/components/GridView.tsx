@@ -7,7 +7,7 @@ import {
     Skeleton,
 } from '@mui/material';
 import React from 'react';
-import Gauge from '../Gauge';
+import Gauge, { colorOrder } from '../Gauge';
 import { minMaxMap } from '../hooks/inverterStats';
 import BatteryGrid from './BatteryGrid';
 import TemperatureGauge from './TemperatureGauge';
@@ -43,7 +43,7 @@ function GridView({ isLoading, data }: GridViewProps) {
         );
     }
     let parameters = Object.entries(data);
-    if (parameters.length !== 20) {
+    if (parameters.length < 20) {
         parameters = new Array(20).fill(null).map(() => ["", ""])
     }
     const [
@@ -107,16 +107,19 @@ function GridView({ isLoading, data }: GridViewProps) {
                                 value={Number(pvpValue)}
                                 name={pvp}
                                 unit="W"
+                                colorOrdering={colorOrder.DEC}
                             />
                             <Gauge
                                 minMax={minMaxMap[13]}
                                 value={Number(pvvValue)}
                                 name={pvv}
+                                colorOrdering={colorOrder.MED}
                             />
                             <Gauge
                                 minMax={minMaxMap[12]}
                                 value={Number(icc4bValue)}
                                 name={icc4b}
+                                colorOrdering={colorOrder.DEC}
                             />
                         </Box>
                     </Paper>
@@ -149,11 +152,13 @@ function GridView({ isLoading, data }: GridViewProps) {
                                 minMax={minMaxMap[0]}
                                 value={Number(gvValue)}
                                 name={gv}
+                                colorOrdering={colorOrder.MED}
                             />
                             <Gauge
                                 minMax={minMaxMap[1]}
                                 value={Number(gfValue)}
                                 name={gf}
+                                colorOrdering={colorOrder.MED}
                             />
                         </Box>
                     </Paper>
@@ -169,14 +174,20 @@ function GridView({ isLoading, data }: GridViewProps) {
                             flexDirection="row"
                         >
                             <Gauge
-                                minMax={minMaxMap[2]}
-                                value={Number(ovValue)}
-                                name={ov}
-                            />
-                            <Gauge
                                 minMax={minMaxMap[5]}
                                 value={Number(oWValue)}
                                 name={oW}
+                            />
+                            <Gauge
+                                minMax={minMaxMap[4]}
+                                value={Number(oVAValue)}
+                                name={oVA}
+                            />
+                            <Gauge
+                                minMax={minMaxMap[2]}
+                                value={Number(ovValue)}
+                                name={ov}
+                                colorOrdering={colorOrder.MED}
                             />
                             <Gauge
                                 minMax={minMaxMap[6]}
@@ -187,11 +198,7 @@ function GridView({ isLoading, data }: GridViewProps) {
                                 minMax={minMaxMap[3]}
                                 value={Number(ofValue)}
                                 name={of}
-                            />
-                            <Gauge
-                                minMax={minMaxMap[4]}
-                                value={Number(oVAValue)}
-                                name={oVA}
+                                colorOrdering={colorOrder.MED}
                             />
                         </Box>
                     </Paper>

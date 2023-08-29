@@ -2,7 +2,7 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import React from 'react';
-import Gauge from '../Gauge';
+import Gauge, { colorOrder } from '../Gauge';
 import { minMaxMap } from '../hooks/inverterStats';
 import PowerIcon from '@mui/icons-material/Power';
 import SolarPowerIcon from '@mui/icons-material/SolarPower';
@@ -25,14 +25,14 @@ type BatteryGridProps = {
     parameters: Array<
         | [string, string]
         | [
-              string,
-              {
-                  conof: devStatus;
-                  acconof: devStatus;
-                  ls: devStatus;
-                  sccconof: devStatus;
-              }
-          ]
+            string,
+            {
+                conof: devStatus;
+                acconof: devStatus;
+                ls: devStatus;
+                sccconof: devStatus;
+            }
+        ]
     >;
 };
 
@@ -109,6 +109,7 @@ function BatteryGrid({
                     value={Number(batVValue)}
                     name={batV}
                     unit="V"
+                    colorOrdering={colorOrder.DEC}
                 />
                 <Gauge
                     minMax={minMaxMap[15]}
@@ -119,12 +120,14 @@ function BatteryGrid({
                     minMax={minMaxMap[9]}
                     value={Number(bccValue)}
                     name={bcc}
+                    colorOrdering={colorOrder.MED}
                 />
 
                 <Gauge
                     minMax={minMaxMap[10]}
                     value={Number(bcValue)}
                     name={bc}
+                    colorOrdering={colorOrder.DEC}
                 />
             </Box>
         </Paper>

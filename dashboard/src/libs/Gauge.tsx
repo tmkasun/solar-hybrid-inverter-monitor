@@ -37,6 +37,33 @@ export const defaultOptions: EChartsOption = {
     ],
 };
 
+
+export enum colorOrder {
+    'DEC',
+    'MED',
+    'ACS'
+}
+
+const GAUGE_COLORS: { [key in colorOrder]: [number, string][] } = {
+    [colorOrder.DEC]: [
+        [0.25, '#FF6E76'], // Red
+        [0.5, '#FDDD60'], // Yellow 
+        [0.75, '#58D9F9'], // Blue
+        [1, '#7CFFB2'], // Green 
+    ],
+    [colorOrder.MED]: [
+        [0.1, '#FF6E76'], // Red
+        [0.45, '#FDDD60'], // Yellow 
+        [0.55, '#7CFFB2'], // Green 
+        [0.9, '#FDDD60'], // Yellow
+        [1, '#FF6E76'], // Red 
+    ], [colorOrder.ACS]: [
+        [0.25, '#7CFFB2'], // Green 
+        [0.5, '#58D9F9'], // Blue
+        [0.75, '#FDDD60'], // Yellow 
+        [1, '#FF6E76'], // Red
+    ]
+}
 echarts.use([TitleComponent, GaugeChart, CanvasRenderer, TooltipComponent]);
 type InverterGaugeChartProps = {
     value: number;
@@ -44,11 +71,12 @@ type InverterGaugeChartProps = {
     id?: string;
     minMax: [number, number];
     unit?: string;
+    colorOrdering?: colorOrder;
 };
 const EnergyLineChart = (props: InverterGaugeChartProps) => {
     const chartRefInst = useRef<HTMLDivElement | null>(null);
     const chartInst = useRef<any>(null);
-    const { id, name, value, minMax, unit = '' } = props;
+    const { id, name, value, minMax, unit = '', colorOrdering = colorOrder.ACS } = props;
     let min, max;
     if (minMax) {
         const [_min, _max] = minMax;
@@ -66,12 +94,7 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
                 axisLine: {
                     lineStyle: {
                         width: 6,
-                        color: [
-                            [0.25, '#FF6E76'],
-                            [0.5, '#FDDD60'],
-                            [0.75, '#58D9F9'],
-                            [1, '#7CFFB2'],
-                        ],
+                        color: GAUGE_COLORS[colorOrdering],
                     },
                 },
                 pointer: {
@@ -85,6 +108,13 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
                 type: 'gauge',
                 progress: {
                     show: true,
+                    roundCap: true,
+                    itemStyle: {
+                        shadowBlur: 10,
+                        shadowColor: 'gray',
+                        color: 'auto'
+                    },
+                    width: 8
                 },
                 detail: {
                     valueAnimation: true,
@@ -115,7 +145,7 @@ const EnergyLineChart = (props: InverterGaugeChartProps) => {
         }
     }, []);
     return (
-        <Box display="flex"  flexDirection="column">
+        <Box display="flex" flexDirection="column">
             <StyledEChartRoot id={id || name} ref={chartRefInst} />
             <Box justifyContent="center" display="flex" mt={-13} mb={3}>
                 {name}

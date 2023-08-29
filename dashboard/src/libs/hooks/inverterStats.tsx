@@ -12,7 +12,7 @@ export const minMaxMap: { [key: number]: [number, number] } = {
     5: [0, 3000], // OPW
     6: [0, 100], // OL
     7: [0, 500], // BUS voltage
-    8: [24.5, 27.5], // BV
+    8: [25.5, 27.0], // BV // Nominal is 24.5 to 27.5
     9: [0, 50], // BCC
     10: [0, 100], // BatteryCap
     11: [0, 45], // Heat sink temp
