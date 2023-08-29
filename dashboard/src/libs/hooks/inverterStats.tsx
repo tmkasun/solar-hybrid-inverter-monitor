@@ -4,12 +4,12 @@ import { useQuery } from 'react-query';
 import { API_BASE_PATH } from '../components/consts';
 
 export const minMaxMap: { [key: number]: [number, number] } = {
-    0: [200, 260], // GV
-    1: [45, 55], // GF
-    2: [210, 250], // OV
-    3: [45, 55], // OF
+    0: [210, 250], // GV
+    1: [48.5, 51.5], // GF
+    2: [215, 245], // OV
+    3: [48.5, 51.5], // OF
     4: [0, 2500], // OVA
-    5: [0, 3000], // OPW
+    5: [0, 2700], // OPW
     6: [0, 100], // OL
     7: [0, 500], // BUS voltage
     8: [25.5, 27.0], // BV // Nominal is 24.5 to 27.5
