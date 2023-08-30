@@ -10,45 +10,48 @@ from libs.inverter import Inverter
 
 # SetInterval(1, Inverter.getQPIG)
 SetInterval(1, Inverter.getAll)
+SetInterval(60, Inverter.uploadData)
 
 app = Flask(__name__)
 
 
-@app.route('/stats/live')
+@app.route("/stats/live")
 def index():
     responseString = Inverter.QPIGS_RAW
     # print(responseString)
     return json.dumps(responseString)
 
 
-@app.route('/stats/mode')
+@app.route("/stats/mode")
 def inverterMode():
     responseString = Inverter.QMOD_RAW
     # print(responseString)
     return json.dumps(responseString)
 
 
-@app.route('/stats/errors')
+@app.route("/stats/errors")
 def inverterErrors():
     responseString = Inverter.getQPIWS()
     # print(responseString)
     return json.dumps(responseString)
 
 
-@app.route('/device/mode/charging', methods=['POST'])
+@app.route("/device/mode/charging", methods=["POST"])
 def inverterSetCMode():
     payload = request.get_json()
-    charge_mode = payload['mode']
-    responseString= Inverter.setChargingMode(charge_mode)
+    charge_mode = payload["mode"]
+    responseString = Inverter.setChargingMode(charge_mode)
     # print(responseString)
     return json.dumps(responseString)
 
-@app.route('/device/mode/output', methods=['POST'])
+
+@app.route("/device/mode/output", methods=["POST"])
 def inverterSetOutMode():
     payload = request.get_json()
-    output_mode = payload['mode']
-    responseString= Inverter.setOutputMode(output_mode)
+    output_mode = payload["mode"]
+    responseString = Inverter.setOutputMode(output_mode)
     # print(responseString)
     return json.dumps(responseString)
+
 
 # app.run()

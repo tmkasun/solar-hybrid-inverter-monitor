@@ -2,31 +2,57 @@
 
 import usb.core, usb.util, usb.control
 import crc16
+
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+
+uri = "mongodb+srv://username:password@solar2.qvpmbtn.mongodb.net/?retryWrites=true&w=majority"
+# Create a new client and connect to the server
+client = MongoClient(uri, server_api=ServerApi("1"))
+# Send a ping to confirm a successful connection
+try:
+    client.admin.command("ping")
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
+
+db = client.solar2
+data = db["data"]
+
+try:
+    data.insert_one({"testing": 1})
+except:
+    print("Error inserting data!")
+assert False
+
 vendorId = 0x0665
 productId = 0x5161
 interface = 0
 dev = usb.core.find(idVendor=vendorId, idProduct=productId)
 if dev.is_kernel_driver_active(interface):
     dev.detach_kernel_driver(interface)
-dev.set_interface_altsetting(0,0)
+dev.set_interface_altsetting(0, 0)
+
 
 def getCommand(cmd):
-    cmd = cmd.encode('utf-8')
-    crc = crc16.crc16xmodem(cmd).to_bytes(2,'big')
-    cmd = cmd+crc
-    cmd = cmd+b'\r'
-    while len(cmd)<8:
-        cmd = cmd+b'\0'
+    cmd = cmd.encode("utf-8")
+    crc = crc16.crc16xmodem(cmd).to_bytes(2, "big")
+    cmd = cmd + crc
+    cmd = cmd + b"\r"
+    while len(cmd) < 8:
+        cmd = cmd + b"\0"
     return cmd
+
 
 def sendCommand(cmd):
     dev.ctrl_transfer(0x21, 0x9, 0x200, 0, cmd)
 
+
 def getResult(timeout=600):
-    res=""
-    i=0
+    res = ""
+    i = 0
     try:
-        res+="".join([chr(i) for i in dev.read(0x81, 500, timeout)])
+        res += "".join([chr(i) for i in dev.read(0x81, 500, timeout)])
     except usb.core.USBError as e:
         if e.errno == 110:
             pass
@@ -34,6 +60,8 @@ def getResult(timeout=600):
             print(e)
             raise
     return res
+
+
 # First response = (NAKss
 # sendCommand(getCommand('QPIWS'))
 # sendCommand(getCommand('QOPPT'))
@@ -52,9 +80,9 @@ def getResult(timeout=600):
 # Setting device charge priority
 # sendCommand(getCommand('PCP01')) # Solar first
 # sendCommand(getCommand('PCP02')) # Solar & Utility
-sendCommand(getCommand('PCP03')) # Solar only
+# sendCommand(getCommand("PCP03"))  # Solar only
 
- # Setting device output source priority
+# Setting device output source priority
 # sendCommand(getCommand('POP01')) # Solar first
 # sendCommand(getCommand('POP02')) # SBU
 # sendCommand(getCommand('POP00')) # Utility first
@@ -68,49 +96,54 @@ sendCommand(getCommand('PCP03')) # Solar only
 
 
 # String QPIGS = "\x51\x50\x49\x47\x53\xB7\xA9\x0D";
-# String QPIWS = "\x51\x50\x49\x57\x53\xB4\xDA\x0D";  
+# String QPIWS = "\x51\x50\x49\x57\x53\xB4\xDA\x0D";
 # String QDI = "\x51\x44\x49\x71\x1B\x0D";
-# String QMOD = "\x51\x4D\x4F\x44\x49\xC1\x0D"; 
-# String QVFW =  "\x51\x56\x46\x57\x62\x99\x0D"; 
-# String QVFW2 = "\x51\x56\x46\x57\x32\xC3\xF5\x0D"; 
-responseString = getResult()
+# String QMOD = "\x51\x4D\x4F\x44\x49\xC1\x0D";
+# String QVFW =  "\x51\x56\x46\x57\x62\x99\x0D";
+# String QVFW2 = "\x51\x56\x46\x57\x32\xC3\xF5\x0D";
+# responseString = getResult()
+
+print("Asa")
+assert False
 print(responseString)
 print(len(responseString))
-assert False
-inverterParameters = responseString.split(' ')
+inverterParameters = responseString.split(" ")
 print(len(inverterParameters))
 
 parameterMappings = [
-    'Grid Voltage',
-    'Grid Frequency',
-    'Output Voltage',
-    'Output Frequency',
-    'Output VA',
-    'Output Power(W)',
-    'Output Usage %',
-    'Unknow',
-    'Battery Voltage',
-    'Battery Charging Current',
-    'Unknow',
-    'Unknow',
-    'PV Charging current *',
-    'PV Voltage',
-    'Battery charging V **',
-    'Battery discharge I **',
-    'Unknow',
-    'Unknow',
-    'Unknow',
-    'PV Power',
-    'Unknow',
-    'Unknow',
-    ]
+    "Grid Voltage",
+    "Grid Frequency",
+    "Output Voltage",
+    "Output Frequency",
+    "Output VA",
+    "Output Power(W)",
+    "Output Usage %",
+    "Unknow",
+    "Battery Voltage",
+    "Battery Charging Current",
+    "Unknow",
+    "Unknow",
+    "PV Charging current *",
+    "PV Voltage",
+    "Battery charging V **",
+    "Battery discharge I **",
+    "Unknow",
+    "Unknow",
+    "Unknow",
+    "PV Power",
+    "Unknow",
+    "Unknow",
+]
 currentIndex = 0
 for parameter in inverterParameters:
     if currentIndex == 0:
         parameter = parameter[1:]
-    print("{} : {} => {}".format(currentIndex + 1 , parameterMappings[currentIndex], parameter))
-    currentIndex +=1
-
+    print(
+        "{} : {} => {}".format(
+            currentIndex + 1, parameterMappings[currentIndex], parameter
+        )
+    )
+    currentIndex += 1
 
 
 """
