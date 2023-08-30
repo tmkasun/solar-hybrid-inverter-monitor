@@ -6,7 +6,7 @@ import { API_BASE_PATH } from '../components/consts';
 export const minMaxMap: { [key: number]: [number, number] } = {
     0: [210, 250], // GV
     1: [48.5, 51.5], // GF
-    2: [215, 245], // OV
+    2: [213, 247], // OV
     3: [48.5, 51.5], // OF
     4: [0, 2500], // OVA
     5: [0, 2700], // OPW
