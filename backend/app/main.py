@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import secrets
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import bcrypt
@@ -41,13 +41,13 @@ class State:
     async def poll(self) -> None:
         try:
             qpigs, mode, warnings = await asyncio.gather(self.inverter.command("QPIGS"), self.inverter.command("QMOD"), self.inverter.command("QPIWS"))
-            captured = datetime.now(UTC).isoformat()
+            captured = datetime.now(timezone.utc).isoformat()
             self.latest = {"connected": True, "mode": mode, "status": status_dict(qpigs), "warnings": warnings,
                            "captured_at": captured, "error": None}
             self.storage.add_sample(self.latest["status"])
             await self.broadcast({"type": "telemetry", "data": self.latest})
         except (InverterError, ValueError) as exc:
-            self.latest.update({"connected": False, "error": str(exc), "captured_at": datetime.now(UTC).isoformat()})
+            self.latest.update({"connected": False, "error": str(exc), "captured_at": datetime.now(timezone.utc).isoformat()})
             await self.broadcast({"type": "connection", "data": self.latest})
 
     async def poll_loop(self) -> None:

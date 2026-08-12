@@ -64,7 +64,10 @@ class UsbHidInverter(BaseInverter):
 
     async def command(self, command: str) -> str:
         async with self.lock:
-            return await asyncio.to_thread(self._send, command)
+            # asyncio.to_thread was added in Python 3.9.  The Pi may run
+            # Python 3.8, where run_in_executor provides the same behavior.
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self._send, command)
 
     async def close(self) -> None:
         self.device = None
