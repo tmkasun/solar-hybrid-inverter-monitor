@@ -59,8 +59,14 @@ class UsbHidInverter(BaseInverter):
         return interface_number, endpoint_out, endpoint_in
 
     def _connect(self) -> None:
-        import usb.core
-        import usb.util
+        try:
+            import usb.core
+            import usb.util
+        except ModuleNotFoundError as exc:
+            raise InverterError(
+                "PyUSB is not installed in this Python environment; run scripts/pi-api-install "
+                "or use backend/.venv/bin/python"
+            ) from exc
         logger.info("Connecting to USB inverter %04x:%04x", self.vendor_id, self.product_id)
         self.device = usb.core.find(idVendor=self.vendor_id, idProduct=self.product_id)
         if self.device is None:

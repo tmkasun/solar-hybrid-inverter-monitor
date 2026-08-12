@@ -18,6 +18,8 @@ services:
   web:
     build: ./frontend
     restart: unless-stopped
+    environment:
+      API_UPSTREAM: api:8000
     depends_on:
       - api
     ports:

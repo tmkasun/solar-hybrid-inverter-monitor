@@ -1,0 +1,21 @@
+# HTTPS virtual host for the frontend-only Docker deployment.
+# The Compose file binds the frontend container only to localhost:8080.
+server {
+  listen 443 ssl http2;
+  server_name home.knnect.lk;
+
+  ssl_certificate /etc/letsencrypt/live/home.knnect.lk/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/home.knnect.lk/privkey.pem;
+  client_max_body_size 32k;
+
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}

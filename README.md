@@ -29,12 +29,14 @@ The CLI talks to the inverter directly; it does not require the web stack to be 
 ./scripts/inverter-cli set output_source_priority sbu --yes
 ```
 
-For a connected inverter, use hardware mode (and ensure `pyusb` is installed in the Python environment):
+For a connected inverter, use hardware mode. The CLI uses `backend/.venv` automatically; prepare it first with `./scripts/pi-api-install` on the Pi:
 
 ```sh
 INVERTER_MODE=hardware ./scripts/inverter-cli status
 INVERTER_MODE=hardware ./scripts/inverter-cli set charger_source_priority solar --yes
 ```
+
+After an Ubuntu release upgrade, rerun `./scripts/pi-api-install`. It detects a changed Python major/minor version, recreates `backend/.venv`, and installs the required dependencies (including PyUSB) for the new interpreter.
 
 Only the supported, model-verified priority settings are available. `set` always requires `--yes`; use `./scripts/inverter-cli --help` for all options, including USB vendor/product ID overrides and JSON output.
 
@@ -77,13 +79,17 @@ Set a bcrypt `ADMIN_PASSWORD_HASH` in `/etc/sako-inverter/api.env`. Its database
 sudo ufw allow from HOME_SERVER_PRIVATE_IP to any port 8000 proto tcp
 ```
 
-Build and upload the static UI from a development machine:
+The frontend can run as a lightweight Docker container on `home.knnect.lk`. Clone this repository there, create an environment file, and start the frontend container:
 
 ```sh
-./scripts/deploy-ui user@home-server:/var/www/sako-inverter
+cd /opt/sako-inverter
+printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\n' > .env.ui
+docker compose --env-file .env.ui -f compose.ui.yaml up -d --build
 ```
 
-On `home.knnect.lk`, copy [home.knnect.lk.nginx.conf.template](deployment/home.knnect.lk.nginx.conf.template), replace `PI_API_HOST` with the Pi's private address, validate it with `sudo nginx -t`, then reload nginx. The template proxies `/api` and `/ws` to the Pi and serves the UI locally. It assumes an existing Let's Encrypt certificate for `home.knnect.lk`.
+`PI_API_UPSTREAM` is used only inside the frontend container and must be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. The container is bound to `127.0.0.1:8080`, so it is not publicly reachable by itself. On `home.knnect.lk`, install [home.knnect.lk.docker.nginx.conf.template](deployment/home.knnect.lk.docker.nginx.conf.template) as the HTTPS virtual host, validate it with `sudo nginx -t`, then reload nginx. It assumes an existing Let's Encrypt certificate for `home.knnect.lk`.
+
+The previous static-file option remains available through [home.knnect.lk.nginx.conf.template](deployment/home.knnect.lk.nginx.conf.template) and `scripts/deploy-ui`.
 
 For future Pi API updates from a development machine, use:
 

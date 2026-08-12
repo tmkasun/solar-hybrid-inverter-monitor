@@ -9,12 +9,25 @@ escaped_user=$(printf '%s' "$service_user" | sed 's/[&/]/\\&/g')
 command -v python3 >/dev/null || { echo "Python 3 is required."; exit 1; }
 "$root_dir/scripts/pi-api-preflight"
 
-python3 -m venv "$root_dir/backend/.venv" || {
+venv_dir=$root_dir/backend/.venv
+venv_python=$venv_dir/bin/python
+system_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+venv_python_version=""
+if [ -x "$venv_python" ]; then
+  venv_python_version=$($venv_python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+fi
+
+if [ "$venv_python_version" != "$system_python_version" ]; then
+  echo "Creating Python $system_python_version virtual environment (previous: ${venv_python_version:-missing})."
+  python3 -m venv --clear "$venv_dir"
+fi
+
+"$venv_python" -m ensurepip --upgrade || {
   echo "Could not create a virtual environment. Install python3-venv and run this script again."
   exit 1
 }
-"$root_dir/backend/.venv/bin/pip" install --upgrade pip
-"$root_dir/backend/.venv/bin/pip" install -r "$root_dir/backend/requirements.txt"
+"$venv_python" -m pip install --upgrade pip
+"$venv_python" -m pip install -r "$root_dir/backend/requirements.txt"
 
 sudo groupadd --system --force sako-inverter
 sudo usermod -aG sako-inverter "$service_user"

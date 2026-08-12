@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root_dir=$(cd "$(dirname "$0")/.." && pwd)
-PYTHONPATH="$root_dir/backend${PYTHONPATH:+:$PYTHONPATH}" exec "${PYTHON:-python3}" -m app.cli "$@"
+
+if [ -n "${PYTHON:-}" ]; then
+  python_bin=$PYTHON
+elif [ -x "$root_dir/backend/.venv/bin/python" ]; then
+  python_bin=$root_dir/backend/.venv/bin/python
+else
+  echo "Python virtual environment is missing. Run $root_dir/scripts/pi-api-install first." >&2
+  exit 1
+fi
+
+PYTHONPATH="$root_dir/backend${PYTHONPATH:+:$PYTHONPATH}" exec "$python_bin" -m app.cli "$@"
