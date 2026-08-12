@@ -22,13 +22,20 @@ def frame(command: str) -> bytes:
     return payload + crc + b"\r"
 
 
-def response_payload(reply: bytes) -> str:
+def response_payload(reply: bytes, *, allow_unchecksummed_rating: bool = False) -> str:
     if len(reply) < 4 or not reply.endswith(b"\r"):
         raise ValueError("truncated inverter response")
     data, received_crc = reply[:-3], reply[-3:-1]
     expected = crc16_xmodem(data).to_bytes(2, "big")
     expected = bytes(byte + 1 if byte in (0x28, 0x0D, 0x0A) else byte for byte in expected)
     if received_crc != expected:
+        # Some PIP-compatible firmware omits the CRC only from QPIRI.  Accept
+        # that read-only rating response only when it has the expected
+        # parenthesized, multi-field structure; all other replies stay strict.
+        unchecksummed = reply[:-1]
+        fields = unchecksummed.lstrip(b"(").split()
+        if allow_unchecksummed_rating and unchecksummed.startswith(b"(") and len(fields) >= 18:
+            return unchecksummed.decode("ascii", errors="replace").lstrip("(")
         raise ValueError("inverter response checksum mismatch")
     return data.decode("ascii", errors="replace").lstrip("(")
 
@@ -46,7 +53,7 @@ class LiveStatus:
     battery_voltage: float | None = None
     battery_charge_current: int | None = None
     battery_capacity_percent: int | None = None
-    inverter_temperature_c: int | None = None
+    inverter_temperature_c: float | int | None = None
     pv_input_current: float | None = None
     pv_input_voltage: float | None = None
     battery_discharge_current: int | None = None
@@ -60,6 +67,17 @@ def _number(fields: list[str], index: int, kind: type) -> Any:
         return None
 
 
+def _temperature(fields: list[str], index: int) -> float | int | None:
+    """Parse PIP temperature fields, including four-digit deci-degree values."""
+    try:
+        raw = fields[index]
+        temperature = int(raw)
+        # Some 24 V PIP variants return, for example, 0490 for 49.0 C.
+        return temperature / 10 if len(raw.lstrip("+-")) >= 4 else temperature
+    except (ValueError, IndexError):
+        return None
+
+
 def parse_qpigs(payload: str) -> LiveStatus:
     fields = payload.split()
     return LiveStatus(
@@ -68,7 +86,7 @@ def parse_qpigs(payload: str) -> LiveStatus:
         output_apparent_power_va=_number(fields, 4, int), output_active_power_w=_number(fields, 5, int),
         load_percent=_number(fields, 6, int), bus_voltage=_number(fields, 7, int),
         battery_voltage=_number(fields, 8, float), battery_charge_current=_number(fields, 9, int),
-        battery_capacity_percent=_number(fields, 10, int), inverter_temperature_c=_number(fields, 11, int),
+        battery_capacity_percent=_number(fields, 10, int), inverter_temperature_c=_temperature(fields, 11),
         pv_input_current=_number(fields, 12, float), pv_input_voltage=_number(fields, 13, float),
         battery_discharge_current=_number(fields, 15, int), status_bits=fields[16] if len(fields) > 16 else None,
     )
@@ -86,4 +104,3 @@ def parse_rating(payload: str) -> dict[str, Any]:
             "battery_bulk_voltage", "battery_float_voltage", "battery_type", "max_ac_charge_current",
             "max_charge_current", "input_voltage_range", "output_source_priority", "charger_source_priority"]
     return {key: fields[index] for index, key in enumerate(keys) if index < len(fields)}
-

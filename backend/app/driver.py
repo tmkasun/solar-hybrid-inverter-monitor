@@ -157,7 +157,13 @@ class UsbHidInverter(BaseInverter):
                 raise ValueError(f"truncated inverter response after {len(chunks)} HID reports: {b''.join(chunks).hex(' ')}")
             reply = b"".join(chunks).split(b"\r", 1)[0] + b"\r"
             try:
-                result = response_payload(reply)
+                try:
+                    result = response_payload(reply)
+                except ValueError:
+                    if command != "QPIRI":
+                        raise
+                    result = response_payload(reply, allow_unchecksummed_rating=True)
+                    logger.warning("Accepted checksumless QPIRI rating response from inverter firmware")
                 logger.debug("USB command %s completed: reports=%d response=%r", command, len(chunks), result)
                 return result
             except ValueError as exc:
