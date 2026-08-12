@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Final
 
 from .protocol import frame, response_payload
 
@@ -22,14 +21,31 @@ class BaseInverter(ABC):
 
 class UsbHidInverter(BaseInverter):
     """pyUSB interrupt transport. All calls are guarded to prevent frame interleaving."""
-    interface: Final = 0
-    endpoint_out: Final = 0x01
-    endpoint_in: Final = 0x81
 
     def __init__(self, vendor_id: int, product_id: int):
         self.vendor_id, self.product_id = vendor_id, product_id
         self.device = None
+        self.interface = None
+        self.endpoint_out = None
+        self.endpoint_in = None
         self.lock = asyncio.Lock()
+
+    @staticmethod
+    def _find_endpoints(configuration):
+        """Choose a HID interface with one interrupt IN and one interrupt OUT endpoint."""
+        candidates = []
+        for interface in configuration:
+            endpoint_addresses = [endpoint.bEndpointAddress for endpoint in interface]
+            endpoint_out = next((address for address in endpoint_addresses if not address & 0x80), None)
+            endpoint_in = next((address for address in endpoint_addresses if address & 0x80), None)
+            if endpoint_out is not None and endpoint_in is not None:
+                # Prefer HID (USB class 3), but allow vendor-class PIP devices.
+                is_hid = interface.bInterfaceClass == 0x03
+                candidates.append((is_hid, interface.bInterfaceNumber, endpoint_out, endpoint_in))
+        if not candidates:
+            raise InverterError("no USB interface with both IN and OUT endpoints was found")
+        _, interface_number, endpoint_out, endpoint_in = sorted(candidates, reverse=True)[0]
+        return interface_number, endpoint_out, endpoint_in
 
     def _connect(self) -> None:
         import usb.core
@@ -37,19 +53,26 @@ class UsbHidInverter(BaseInverter):
         if self.device is None:
             raise InverterError(f"USB inverter {self.vendor_id:04x}:{self.product_id:04x} not found")
         try:
+            self.device.set_configuration()
+        except Exception:
+            # A configuration may already be active, which is normal.
+            pass
+        try:
+            self.interface, self.endpoint_out, self.endpoint_in = self._find_endpoints(self.device.get_active_configuration())
+        except Exception as exc:
+            self.device = None
+            raise InverterError(f"could not discover USB HID endpoints: {exc}") from exc
+        try:
             if self.device.is_kernel_driver_active(self.interface):
                 self.device.detach_kernel_driver(self.interface)
         except (NotImplementedError, AttributeError):
-            pass
-        try:
-            self.device.set_configuration()
-        except Exception:
             pass
 
     def _send(self, command: str) -> str:
         if self.device is None:
             self._connect()
         try:
+            assert self.endpoint_out is not None and self.endpoint_in is not None
             self.device.write(self.endpoint_out, frame(command), timeout=2500)
             chunks: list[bytes] = []
             for _ in range(8):
