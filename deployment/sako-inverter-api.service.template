@@ -1,0 +1,24 @@
+[Unit]
+Description=Sako inverter API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=sako-inverter
+SupplementaryGroups=sako-inverter
+WorkingDirectory=@PROJECT_DIR@/backend
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/sako-inverter/api.env
+ExecStart=@PROJECT_DIR@/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --log-level info
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/sako-inverter
+
+[Install]
+WantedBy=multi-user.target

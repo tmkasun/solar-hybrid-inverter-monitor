@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+target=${1:?Usage: scripts/deploy-ui user@home-server:/var/www/sako-inverter}
+host=${target%%:*}
+destination=${target#*:}
+if [ "$destination" = "$target" ]; then
+  echo "Destination must include an absolute path, for example user@host:/var/www/sako-inverter."
+  exit 1
+fi
+
+root_dir=$(cd "$(dirname "$0")/.." && pwd)
+(cd "$root_dir/frontend" && npm ci && npm run build)
+ssh "$host" "mkdir -p '$destination'"
+rsync -az --delete "$root_dir/frontend/dist/" "$host:$destination/"
+echo "UI files copied to $host:$destination. Install deployment/home.knnect.lk.nginx.conf.template on the web server after replacing PI_API_HOST."

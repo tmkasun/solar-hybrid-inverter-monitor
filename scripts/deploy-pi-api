@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+target=${1:?Usage: scripts/deploy-pi-api user@raspberry-pi[:/opt/sako-inverter]}
+host=${target%%:*}
+destination=${target#*:}
+if [ "$destination" = "$target" ]; then destination=/opt/sako-inverter; fi
+
+ssh "$host" "mkdir -p '$destination'"
+rsync -az --delete --exclude .git --exclude .env --exclude data --exclude node_modules --exclude dist --exclude .venv ./ "$host:$destination/"
+ssh "$host" "cd '$destination' && ./scripts/pi-api-install"
+echo "Pi API deployment complete. Check it with: ssh $host 'sudo systemctl status sako-inverter-api'"

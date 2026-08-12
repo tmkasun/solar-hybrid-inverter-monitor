@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root_dir=$(cd "$(dirname "$0")/.." && pwd)
+service_user=${SUDO_USER:-$USER}
+escaped_root=$(printf '%s' "$root_dir" | sed 's/[&/]/\\&/g')
+escaped_user=$(printf '%s' "$service_user" | sed 's/[&/]/\\&/g')
+
+command -v python3 >/dev/null || { echo "Python 3 is required."; exit 1; }
+"$root_dir/scripts/pi-api-preflight"
+
+python3 -m venv "$root_dir/backend/.venv" || {
+  echo "Could not create a virtual environment. Install python3-venv and run this script again."
+  exit 1
+}
+"$root_dir/backend/.venv/bin/pip" install --upgrade pip
+"$root_dir/backend/.venv/bin/pip" install -r "$root_dir/backend/requirements.txt"
+
+sudo groupadd --system --force sako-inverter
+sudo usermod -aG sako-inverter "$service_user"
+sudo install -d -o "$service_user" -g sako-inverter -m 0750 /var/lib/sako-inverter /etc/sako-inverter
+sudo install -m 0644 "$root_dir/deployment/99-sako-inverter.rules" /etc/udev/rules.d/99-sako-inverter.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+if [ ! -f /etc/sako-inverter/api.env ]; then
+  sudo install -m 0640 -o root -g sako-inverter "$root_dir/deployment/sako-inverter-api.env.example" /etc/sako-inverter/api.env
+  echo "Created /etc/sako-inverter/api.env. Set ADMIN_PASSWORD_HASH before enabling remote settings."
+fi
+
+sed -e "s/@PROJECT_DIR@/$escaped_root/g" -e "s/@SERVICE_USER@/$escaped_user/g" \
+  "$root_dir/deployment/sako-inverter-api.service.template" | sudo tee /etc/systemd/system/sako-inverter-api.service >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now sako-inverter-api.service
+sudo systemctl status --no-pager sako-inverter-api.service
+echo "API installed. Log out and back in before running the direct CLI as $service_user so its new USB group takes effect."

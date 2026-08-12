@@ -1,0 +1,38 @@
+# Replace PI_API_HOST with the Pi's private LAN/VPN IP or hostname.
+# The Pi API must be reachable only from this server; do not expose port 8000
+# publicly. Install this as the HTTPS virtual host for home.knnect.lk.
+server {
+  listen 443 ssl http2;
+  server_name home.knnect.lk;
+
+  ssl_certificate /etc/letsencrypt/live/home.knnect.lk/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/home.knnect.lk/privkey.pem;
+
+  root /var/www/sako-inverter;
+  index index.html;
+  client_max_body_size 32k;
+
+  location /api/ {
+    proxy_pass http://PI_API_HOST:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 30s;
+  }
+
+  location /ws {
+    proxy_pass http://PI_API_HOST:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 90s;
+  }
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

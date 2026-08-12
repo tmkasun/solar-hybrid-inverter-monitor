@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Host: $(hostname)"
+python3 --version
+python3 -c 'import sys; assert sys.version_info >= (3, 8), "Python 3.8 or newer is required"'
+test -e /dev/bus/usb || { echo "/dev/bus/usb is unavailable."; exit 1; }
+if command -v lsusb >/dev/null && lsusb -d 0665:5161 >/dev/null 2>&1; then
+  echo "Sako USB device 0665:5161 detected."
+else
+  echo "WARNING: USB inverter 0665:5161 is not detected."
+fi
