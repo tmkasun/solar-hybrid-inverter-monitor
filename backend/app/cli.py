@@ -50,6 +50,24 @@ async def _read_status(inverter: BaseInverter) -> dict[str, Any]:
     }
 
 
+async def _require_pip_protocol(inverter: BaseInverter) -> None:
+    """Confirm PIP support before issuing any status or setting command.
+
+    USB ID 0665:5161 is shared by devices that use a different UPS protocol.
+    QPI is the non-mutating PIP identification query; a PIP inverter replies
+    with a PI-prefixed protocol version, such as PI30.
+    """
+    try:
+        protocol = await inverter.command("QPI")
+    except InverterError as exc:
+        raise InverterError(f"could not verify PIP protocol with QPI; no status or setting command was sent: {exc}") from exc
+    if not protocol.startswith("PI"):
+        raise InverterError(
+            f"device does not identify as a PIP inverter (QPI returned {protocol!r}); "
+            "no status or setting command was sent"
+        )
+
+
 def _show_status(snapshot: dict[str, Any], as_json: bool) -> None:
     if as_json:
         _print_json(snapshot)
@@ -136,6 +154,7 @@ async def execute(args: argparse.Namespace) -> int:
 
     inverter = _inverter(args)
     try:
+        await _require_pip_protocol(inverter)
         if args.operation == "status":
             _show_status(await _read_status(inverter), args.json)
         elif args.operation == "info":

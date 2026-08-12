@@ -39,6 +39,10 @@ class State:
         self.task: asyncio.Task | None = None
 
     async def poll(self) -> None:
+        if not isinstance(self.diagnostics.get("QPI"), str) or not self.diagnostics["QPI"].startswith("PI"):
+            self.latest.update({"connected": False, "error": "inverter has not identified as PIP-compatible", "captured_at": datetime.now(timezone.utc).isoformat()})
+            await self.broadcast({"type": "connection", "data": self.latest})
+            return
         try:
             qpigs, mode, warnings = await asyncio.gather(self.inverter.command("QPIGS"), self.inverter.command("QMOD"), self.inverter.command("QPIWS"))
             captured = datetime.now(timezone.utc).isoformat()
@@ -59,7 +63,15 @@ class State:
     async def discover(self) -> dict[str, Any]:
         commands = ("QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG")
         result: dict[str, Any] = {}
-        for command in commands:
+        try:
+            result["QPI"] = await self.inverter.command("QPI")
+        except InverterError as exc:
+            result["QPI"] = {"error": str(exc)}
+        if not isinstance(result["QPI"], str) or not result["QPI"].startswith("PI"):
+            result["protocol_error"] = "device did not identify as PIP-compatible; no further commands were sent"
+            self.diagnostics = result
+            return result
+        for command in commands[1:]:
             try:
                 result[command] = await self.inverter.command(command)
             except InverterError as exc:
