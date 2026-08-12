@@ -22,6 +22,7 @@ class BaseInverter(ABC):
 class UsbHidInverter(BaseInverter):
     """pyUSB interrupt transport. All calls are guarded to prevent frame interleaving."""
     report_size = 8
+    max_response_reports = 32
 
     def __init__(self, vendor_id: int, product_id: int):
         self.vendor_id, self.product_id = vendor_id, product_id
@@ -86,7 +87,9 @@ class UsbHidInverter(BaseInverter):
                 # that declare Output reports but no interrupt OUT endpoint.
                 self.device.ctrl_transfer(0x21, 0x09, 0x0200, self.interface, payload, timeout=2500)
             chunks: list[bytes] = []
-            for _ in range(8):
+            # QPIGS and QPIRI exceed 64 bytes.  This device transports them
+            # in 8-byte HID reports, so keep reading until their CR terminator.
+            for _ in range(self.max_response_reports):
                 chunk = bytes(self.device.read(self.endpoint_in, self.report_size, timeout=2500))
                 chunks.append(chunk)
                 if b"\r" in chunk:

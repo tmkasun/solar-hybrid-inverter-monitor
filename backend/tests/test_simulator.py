@@ -58,3 +58,22 @@ def test_usb_driver_uses_hid_set_report_without_an_out_endpoint():
     inverter.endpoint_in = 0x81
     assert inverter._send("QMOD") == "ACK"
     assert inverter.device.transfer == ((0x21, 0x09, 0x0200, 0, frame("QMOD").ljust(8, b"\0")), {"timeout": 2500})
+
+
+def test_usb_driver_reads_status_across_multiple_hid_reports():
+    status = "230.0 50.0 230.0 50.0 0550 0440 22 390 51.20 012 86 31 4.2 116.0 51.10 000 01000000"
+    reply = frame(f"({status}")
+    reports = [reply[index:index + 8] for index in range(0, len(reply), 8)]
+
+    class Device:
+        def ctrl_transfer(self, *args, **kwargs):
+            return None
+
+        def read(self, endpoint, size, timeout):
+            return reports.pop(0)
+
+    inverter = UsbHidInverter(0x0665, 0x5161)
+    inverter.device = Device()
+    inverter.interface = 0
+    inverter.endpoint_in = 0x81
+    assert inverter._send("QPIGS") == status
