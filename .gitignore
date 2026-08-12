@@ -9,3 +9,4 @@ frontend/dist/
 frontend/*.js
 frontend/*.d.ts
 frontend/*.tsbuildinfo
+.venv/
