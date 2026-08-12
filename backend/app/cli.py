@@ -87,7 +87,11 @@ def _show_status(snapshot: dict[str, Any], as_json: bool) -> None:
     print(f"Captured: {snapshot['captured_at']}")
     print(f"Inverter mode: {snapshot['mode']}")
     print(f"Warnings: {snapshot['warnings']}")
-    _print_fields(snapshot["status"])
+    values = snapshot["status"]
+    _print_fields({key: value for key, value in values.items() if key != "status_flags"})
+    active_flags = [flag["label"] for flag in values.get("status_flags", []) if flag["active"]]
+    if active_flags:
+        print(f"Active status flags: {', '.join(active_flags)}")
 
 
 async def _show_info(inverter: BaseInverter, as_json: bool) -> None:

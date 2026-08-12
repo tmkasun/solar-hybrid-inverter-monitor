@@ -19,6 +19,8 @@ from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInvert
 from .protocol import parse_rating, status_dict
 from .storage import Storage
 
+logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO),
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 

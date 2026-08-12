@@ -13,6 +13,9 @@ async def test_simulator_status_and_guarded_setting_change():
         status = await client.get("/api/status")
         assert status.status_code == 200
         assert status.json()["connected"] is True
+        flags = status.json()["status"]["status_flags"]
+        assert flags[0]["label"] == "SBU-priority capability"
+        assert flags[0]["active"] is False
 
         denied = await client.post("/api/settings/output_source_priority", json={"value": "sbu", "confirmation": "APPLY output_source_priority"})
         assert denied.status_code == 401

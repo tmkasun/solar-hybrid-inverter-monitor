@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
-import type { Capability, Status } from "./types";
+import type { Capability, Status, StatusValues } from "./types";
 import "./styles.css";
 
 const labels: Record<string, string> = {
@@ -41,10 +41,11 @@ function App() {
 }
 
 function Overview({ status, points }: { status: Status | null; points: Array<Record<string, number | string | null>> }) {
-  const values = status?.status || {};
+  const values: StatusValues = status?.status || {};
+  const activeFlags = values.status_flags?.filter(flag => flag.active) || [];
   return <section><div className="summary">{Object.entries(labels).map(([key, label]) => <article key={key}><span>{label}</span><strong>{values[key] ?? "—"}</strong><small>{key.includes("power") ? "W" : key.includes("temperature") ? "°C" : key.includes("percent") ? "%" : "V"}</small></article>)}</div>
     <div className="panel"><h2>24-hour voltage trend</h2><div className="chart"><ResponsiveContainer><LineChart data={points}><XAxis dataKey="at" minTickGap={36}/><YAxis/><Tooltip/><Line type="monotone" dataKey="battery_voltage" stroke="#f7c948" dot={false}/><Line type="monotone" dataKey="pv_input_voltage" stroke="#50c878" dot={false}/></LineChart></ResponsiveContainer></div></div>
-    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {status?.captured_at ? new Date(status.captured_at).toLocaleString() : "—"}</p>{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
+    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {status?.captured_at ? new Date(status.captured_at).toLocaleString() : "—"}</p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
   </section>;
 }
 

@@ -55,6 +55,42 @@ Route `sako.knnect.com` to the Pi's static LAN address using the router/Pi-hole 
 
 Run `./scripts/pi-preflight` on the Pi to validate Docker, USB bus availability, and the inverter USB ID. Ubuntu 20.04 is out of standard support and should be upgraded after commissioning.
 
+## Split deployment: Pi API and remote UI
+
+To minimise Raspberry Pi resource use, run only the Python API directly on the Pi and serve the compiled UI from `home.knnect.lk`. The web server must reach the Pi over a private LAN or VPN address; do not expose the Pi's port 8000 to the public internet. The reverse proxy keeps browser requests same-origin, so authentication cookies and WebSockets continue to work without CORS changes.
+
+On the Pi, install the API service (this installs Python packages in `backend/.venv`, configures USB access, and starts systemd):
+
+```sh
+cd ~/projects/solar-hybrid-inverter-monitor
+# Only if this Pi previously ran the Docker stack:
+docker compose down
+./scripts/pi-api-install
+sudoedit /etc/sako-inverter/api.env
+sudo systemctl restart sako-inverter-api
+sudo journalctl -u sako-inverter-api -f
+```
+
+Set a bcrypt `ADMIN_PASSWORD_HASH` in `/etc/sako-inverter/api.env`. Its database is stored at `/var/lib/sako-inverter/sako.db`. Permit TCP port 8000 only from the private IP of the `home.knnect.lk` server, for example with UFW:
+
+```sh
+sudo ufw allow from HOME_SERVER_PRIVATE_IP to any port 8000 proto tcp
+```
+
+Build and upload the static UI from a development machine:
+
+```sh
+./scripts/deploy-ui user@home-server:/var/www/sako-inverter
+```
+
+On `home.knnect.lk`, copy [home.knnect.lk.nginx.conf.template](deployment/home.knnect.lk.nginx.conf.template), replace `PI_API_HOST` with the Pi's private address, validate it with `sudo nginx -t`, then reload nginx. The template proxies `/api` and `/ws` to the Pi and serves the UI locally. It assumes an existing Let's Encrypt certificate for `home.knnect.lk`.
+
+For future Pi API updates from a development machine, use:
+
+```sh
+./scripts/deploy-pi-api ubuntu@PI_HOST:/home/ubuntu/projects/solar-hybrid-inverter-monitor
+```
+
 ## Safety
 
 Only capability-registered settings are exposed. Every write needs an authenticated cookie, CSRF header, typed API confirmation, UI confirmation, inverter acknowledgement, and audit-log entry. First validate each offered setting against the LCD/manual with the appliance in a safe operating condition.

@@ -17,6 +17,13 @@ def test_status_parser_decodes_deci_degree_temperature():
     assert status.inverter_temperature_c == 49.0
 
 
+def test_status_parser_decodes_human_readable_status_flags():
+    status = parse_qpigs("232.0 49.9 229.0 50.0 0592 0476 020 374 26.12 000 078 0490 0010 036.9 25.43 00011 10010110")
+    assert [flag["label"] for flag in status.status_flags if flag["active"]] == [
+        "SBU-priority capability", "Load output on", "Charging enabled", "Solar charging enabled"
+    ]
+
+
 def test_bad_checksum_is_rejected():
     try:
         response_payload(b"(ACKxx\r")
