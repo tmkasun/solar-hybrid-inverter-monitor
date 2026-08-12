@@ -18,6 +18,26 @@ Open `http://localhost:5173`. The demo password is `admin`. The API documentatio
 
 Run the stack in containers with `docker compose -f compose.dev.yaml up --build`; browse to `http://localhost:8080`.
 
+## Command-line control
+
+The CLI talks to the inverter directly; it does not require the web stack to be running. It defaults to the safe simulator and can be run from the repository root:
+
+```sh
+./scripts/inverter-cli status
+./scripts/inverter-cli monitor --interval 5
+./scripts/inverter-cli info
+./scripts/inverter-cli set output_source_priority sbu --yes
+```
+
+For a connected inverter, use hardware mode (and ensure `pyusb` is installed in the Python environment):
+
+```sh
+INVERTER_MODE=hardware ./scripts/inverter-cli status
+INVERTER_MODE=hardware ./scripts/inverter-cli set charger_source_priority solar --yes
+```
+
+Only the supported, model-verified priority settings are available. `set` always requires `--yes`; use `./scripts/inverter-cli --help` for all options, including USB vendor/product ID overrides and JSON output.
+
 ## Raspberry Pi deployment
 
 On the Pi, install Docker Engine and the Compose plugin. From the laptop run `scripts/deploy-pi user@PI_HOST:/opt/sako-inverter`. The first run copies the udev rule and creates `.env`; set a unique bcrypt `ADMIN_PASSWORD_HASH` there, then run the deploy command again.
