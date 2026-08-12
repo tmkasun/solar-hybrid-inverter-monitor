@@ -1,5 +1,5 @@
 import pytest
-from app.driver import SimulatorInverter, UsbHidInverter
+from app.driver import InverterError, SimulatorInverter, UsbHidInverter
 from app.protocol import frame
 
 
@@ -77,3 +77,19 @@ def test_usb_driver_reads_status_across_multiple_hid_reports():
     inverter.interface = 0
     inverter.endpoint_in = 0x81
     assert inverter._send("QPIGS") == status
+
+
+def test_usb_driver_includes_raw_bytes_in_checksum_error():
+    class Device:
+        def ctrl_transfer(self, *args, **kwargs):
+            return None
+
+        def read(self, endpoint, size, timeout):
+            return b"(ACKxx\r"
+
+    inverter = UsbHidInverter(0x0665, 0x5161)
+    inverter.device = Device()
+    inverter.interface = 0
+    inverter.endpoint_in = 0x81
+    with pytest.raises(InverterError, match="received bytes: 28 41 43 4b 78 78 0d"):
+        inverter._send("QMOD")

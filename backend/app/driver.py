@@ -94,7 +94,11 @@ class UsbHidInverter(BaseInverter):
                 chunks.append(chunk)
                 if b"\r" in chunk:
                     break
-            return response_payload(b"".join(chunks).split(b"\r", 1)[0] + b"\r")
+            reply = b"".join(chunks).split(b"\r", 1)[0] + b"\r"
+            try:
+                return response_payload(reply)
+            except ValueError as exc:
+                raise ValueError(f"{exc}; received bytes: {reply.hex(' ')}") from exc
         except Exception as exc:
             self.device = None
             raise InverterError(f"USB command {command} failed: {exc}") from exc
