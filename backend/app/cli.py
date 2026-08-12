@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from typing import Any, Sequence
@@ -16,6 +17,8 @@ from .capabilities import CAPABILITIES, command_for
 from .config import settings
 from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInverter
 from .protocol import parse_rating, status_dict
+
+logger = logging.getLogger(__name__)
 
 
 def _integer(value: str) -> int:
@@ -60,8 +63,10 @@ async def _require_pip_protocol(inverter: BaseInverter) -> None:
     try:
         protocol = await inverter.command("QPI")
     except InverterError as exc:
+        logger.exception("PIP protocol probe failed")
         raise InverterError(f"could not verify PIP protocol with QPI; no status or setting command was sent: {exc}") from exc
     if not protocol.startswith("PI"):
+        logger.error("PIP protocol probe rejected device response: %r", protocol)
         raise InverterError(
             f"device does not identify as a PIP inverter (QPI returned {protocol!r}); "
             "no status or setting command was sent"
@@ -118,6 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="USB vendor ID for hardware mode (default: 0x%(default)04x)")
     parser.add_argument("--product-id", type=_integer, default=settings.product_id,
                         help="USB product ID for hardware mode (default: 0x%(default)04x)")
+    parser.add_argument("--verbose", action="store_true", help="show detailed transport logs on stderr")
     subcommands = parser.add_subparsers(dest="operation", required=True)
 
     status = subcommands.add_parser("status", help="read one live status snapshot")
@@ -154,6 +160,7 @@ async def execute(args: argparse.Namespace) -> int:
 
     inverter = _inverter(args)
     try:
+        logger.info("Starting %s in %s mode", args.operation, args.mode)
         await _require_pip_protocol(inverter)
         if args.operation == "status":
             _show_status(await _read_status(inverter), args.json)
@@ -167,23 +174,29 @@ async def execute(args: argparse.Namespace) -> int:
                 try:
                     _show_status(await _read_status(inverter), args.json)
                 except (InverterError, ValueError) as exc:
+                    logger.exception("Monitor reading %d failed", readings + 1)
                     print(f"error: {exc}", file=sys.stderr)
                 readings += 1
                 if args.count is None or readings < args.count:
                     await asyncio.sleep(args.interval)
     finally:
         await inverter.close()
+        logger.info("Finished %s", args.operation)
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
         return asyncio.run(execute(args))
     except (InverterError, ValueError) as exc:
+        logger.exception("CLI command failed")
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
+        logger.info("CLI interrupted by user")
         return 130
 
 

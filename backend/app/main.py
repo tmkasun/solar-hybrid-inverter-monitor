@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from .config import settings
 from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInverter
 from .protocol import parse_rating, status_dict
 from .storage import Storage
+
+logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
@@ -37,9 +40,12 @@ class State:
         self.diagnostics: dict[str, Any] = {}
         self.sockets: set[WebSocket] = set()
         self.task: asyncio.Task | None = None
+        logger.info("Inverter state initialized in %s mode", settings.mode)
 
     async def poll(self) -> None:
         if not isinstance(self.diagnostics.get("QPI"), str) or not self.diagnostics["QPI"].startswith("PI"):
+            if self.latest["error"] != "inverter has not identified as PIP-compatible":
+                logger.error("Poll skipped: inverter has not identified as PIP-compatible")
             self.latest.update({"connected": False, "error": "inverter has not identified as PIP-compatible", "captured_at": datetime.now(timezone.utc).isoformat()})
             await self.broadcast({"type": "connection", "data": self.latest})
             return
@@ -51,6 +57,7 @@ class State:
             self.storage.add_sample(self.latest["status"])
             await self.broadcast({"type": "telemetry", "data": self.latest})
         except (InverterError, ValueError) as exc:
+            logger.exception("Inverter telemetry poll failed")
             self.latest.update({"connected": False, "error": str(exc), "captured_at": datetime.now(timezone.utc).isoformat()})
             await self.broadcast({"type": "connection", "data": self.latest})
 
@@ -63,11 +70,14 @@ class State:
     async def discover(self) -> dict[str, Any]:
         commands = ("QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG")
         result: dict[str, Any] = {}
+        logger.info("Discovering inverter protocol and capabilities")
         try:
             result["QPI"] = await self.inverter.command("QPI")
         except InverterError as exc:
+            logger.exception("Inverter QPI protocol probe failed")
             result["QPI"] = {"error": str(exc)}
         if not isinstance(result["QPI"], str) or not result["QPI"].startswith("PI"):
+            logger.error("Inverter protocol probe was rejected: %r", result["QPI"])
             result["protocol_error"] = "device did not identify as PIP-compatible; no further commands were sent"
             self.diagnostics = result
             return result
@@ -75,6 +85,7 @@ class State:
             try:
                 result[command] = await self.inverter.command(command)
             except InverterError as exc:
+                logger.exception("Inverter discovery command %s failed", command)
                 result[command] = {"error": str(exc)}
         if isinstance(result.get("QPIRI"), str):
             result["rating"] = parse_rating(result["QPIRI"])
@@ -87,6 +98,7 @@ class State:
             try:
                 await socket.send_json(event)
             except Exception:
+                logger.warning("Dropping failed websocket client", exc_info=True)
                 stale.append(socket)
         for socket in stale:
             self.sockets.discard(socket)
@@ -97,6 +109,7 @@ state = State()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    logger.info("Starting inverter API")
     await state.discover()
     state.task = asyncio.create_task(state.poll_loop())
     yield
@@ -104,6 +117,7 @@ async def lifespan(_: FastAPI):
         state.task.cancel()
     await state.inverter.close()
     state.storage.close()
+    logger.info("Stopped inverter API")
 
 
 app = FastAPI(title="Sako Inverter", version="1.0.0", lifespan=lifespan)
@@ -163,6 +177,7 @@ async def refresh_diagnostics(_: str = Depends(session_auth)) -> dict[str, Any]:
 async def login(body: LoginRequest, response: Response) -> dict[str, str]:
     valid = bool(settings.admin_password_hash) and bcrypt.checkpw(body.password.encode(), settings.admin_password_hash.encode())
     if not valid:
+        logger.warning("Rejected login attempt")
         state.storage.audit("login", "rejected", detail="invalid password")
         raise HTTPException(401, "invalid credentials")
     session, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
@@ -177,6 +192,7 @@ async def logout(response: Response, sako_session: str | None = Cookie(default=N
     if sako_session:
         state.sessions.pop(sako_session, None)
     response.delete_cookie("sako_session")
+    logger.info("User logged out")
     return {"ok": True}
 
 
@@ -191,6 +207,7 @@ async def change_setting(key: str, body: ChangeRequest, _: str = Depends(session
         state.storage.audit("setting_change", "rejected", key, new_value=body.value, detail="unsupported setting/value")
         raise HTTPException(422, "unsupported setting or value for this inverter")
     try:
+        logger.info("Applying inverter setting %s=%s using %s", key, body.value, command)
         reply = await state.inverter.command(command)
         if reply not in ("ACK", "(ACK"):
             raise InverterError(f"inverter rejected command: {reply}")
@@ -200,6 +217,7 @@ async def change_setting(key: str, body: ChangeRequest, _: str = Depends(session
         await state.broadcast(event)
         return {"ok": True, "reply": reply, "diagnostics": diagnostics}
     except InverterError as exc:
+        logger.exception("Inverter setting change %s=%s failed", key, body.value)
         state.storage.audit("setting_change", "failed", key, new_value=body.value, detail=str(exc))
         await state.broadcast({"type": "command_result", "data": {"key": key, "value": body.value, "ok": False, "error": str(exc)}})
         raise HTTPException(502, str(exc))

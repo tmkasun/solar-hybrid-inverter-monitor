@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class Storage:
@@ -29,22 +32,33 @@ class Storage:
             );
         """)
         self.connection.commit()
+        logger.info("Storage initialized at %s", path)
 
     @staticmethod
     def now() -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     def add_sample(self, data: dict[str, Any]) -> str:
-        timestamp = self.now()
-        self.connection.execute("INSERT INTO samples VALUES (?, ?)", (timestamp, json.dumps(data)))
-        self.connection.commit()
-        return timestamp
+        try:
+            timestamp = self.now()
+            self.connection.execute("INSERT INTO samples VALUES (?, ?)", (timestamp, json.dumps(data)))
+            self.connection.commit()
+            logger.debug("Stored telemetry sample at %s", timestamp)
+            return timestamp
+        except sqlite3.Error:
+            logger.exception("Failed to store telemetry sample")
+            raise
 
     def audit(self, action: str, result: str, setting_key: str | None = None,
               old_value: str | None = None, new_value: str | None = None, detail: str | None = None) -> None:
-        self.connection.execute("INSERT INTO audit_log (occurred_at,action,setting_key,old_value,new_value,result,detail) VALUES (?,?,?,?,?,?,?)",
-                                (self.now(), action, setting_key, old_value, new_value, result, detail))
-        self.connection.commit()
+        try:
+            self.connection.execute("INSERT INTO audit_log (occurred_at,action,setting_key,old_value,new_value,result,detail) VALUES (?,?,?,?,?,?,?)",
+                                    (self.now(), action, setting_key, old_value, new_value, result, detail))
+            self.connection.commit()
+            logger.info("Audit event recorded: action=%s result=%s setting=%s", action, result, setting_key)
+        except sqlite3.Error:
+            logger.exception("Failed to record audit event: action=%s result=%s", action, result)
+            raise
 
     def history(self, hours: int) -> list[dict[str, Any]]:
         cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
@@ -72,6 +86,8 @@ class Storage:
         if old_rows:
             self.connection.execute("DELETE FROM samples WHERE captured_at < ?", (cutoff,))
             self.connection.commit()
+            logger.info("Compacted %d raw telemetry samples", len(old_rows))
 
     def close(self) -> None:
         self.connection.close()
+        logger.info("Storage closed")

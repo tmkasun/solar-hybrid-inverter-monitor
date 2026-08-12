@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 
 from .protocol import frame, response_payload
+
+logger = logging.getLogger(__name__)
 
 
 class InverterError(RuntimeError):
@@ -55,24 +58,31 @@ class UsbHidInverter(BaseInverter):
 
     def _connect(self) -> None:
         import usb.core
+        logger.info("Connecting to USB inverter %04x:%04x", self.vendor_id, self.product_id)
         self.device = usb.core.find(idVendor=self.vendor_id, idProduct=self.product_id)
         if self.device is None:
+            logger.error("USB inverter %04x:%04x was not found", self.vendor_id, self.product_id)
             raise InverterError(f"USB inverter {self.vendor_id:04x}:{self.product_id:04x} not found")
         try:
             self.device.set_configuration()
         except Exception:
             # A configuration may already be active, which is normal.
-            pass
+            logger.debug("USB configuration was already active", exc_info=True)
         try:
             self.interface, self.endpoint_out, self.endpoint_in = self._find_endpoints(self.device.get_active_configuration())
         except Exception as exc:
+            logger.exception("Unable to discover USB endpoints for %04x:%04x", self.vendor_id, self.product_id)
             self.device = None
             raise InverterError(f"could not discover USB HID endpoints: {exc}") from exc
+        logger.info("USB inverter connected: interface=%d endpoint_out=%s endpoint_in=0x%02x",
+                    self.interface, f"0x{self.endpoint_out:02x}" if self.endpoint_out is not None else "HID control",
+                    self.endpoint_in)
         try:
             if self.device.is_kernel_driver_active(self.interface):
+                logger.info("Detaching kernel driver from USB interface %d", self.interface)
                 self.device.detach_kernel_driver(self.interface)
         except (NotImplementedError, AttributeError):
-            pass
+            logger.debug("Kernel driver status is unavailable for USB interface %d", self.interface)
 
     def _send(self, command: str) -> str:
         if self.device is None:
@@ -80,6 +90,7 @@ class UsbHidInverter(BaseInverter):
         try:
             assert self.interface is not None and self.endpoint_in is not None
             payload = frame(command).ljust(self.report_size, b"\0")
+            logger.debug("Sending USB command %s: report=%s", command, payload.hex(" "))
             if self.endpoint_out is not None:
                 self.device.write(self.endpoint_out, payload, timeout=2500)
             else:
@@ -94,12 +105,17 @@ class UsbHidInverter(BaseInverter):
                 chunks.append(chunk)
                 if b"\r" in chunk:
                     break
+            if not any(b"\r" in chunk for chunk in chunks):
+                raise ValueError(f"truncated inverter response after {len(chunks)} HID reports: {b''.join(chunks).hex(' ')}")
             reply = b"".join(chunks).split(b"\r", 1)[0] + b"\r"
             try:
-                return response_payload(reply)
+                result = response_payload(reply)
+                logger.debug("USB command %s completed: reports=%d response=%r", command, len(chunks), result)
+                return result
             except ValueError as exc:
                 raise ValueError(f"{exc}; received bytes: {reply.hex(' ')}") from exc
         except Exception as exc:
+            logger.exception("USB command %s failed", command)
             self.device = None
             raise InverterError(f"USB command {command} failed: {exc}") from exc
 
@@ -111,6 +127,7 @@ class UsbHidInverter(BaseInverter):
             return await loop.run_in_executor(None, self._send, command)
 
     async def close(self) -> None:
+        logger.info("Closing USB inverter connection")
         self.device = None
 
 
@@ -126,7 +143,9 @@ class SimulatorInverter(BaseInverter):
         async with self.lock:
             if self.fail_next:
                 self.fail_next = False
+                logger.error("Simulator configured to fail command %s", command)
                 raise InverterError("simulated USB timeout")
+            logger.debug("Simulator command %s", command)
             if command.startswith("POP"):
                 self.output_priority = command[-2:]
                 return "ACK"
