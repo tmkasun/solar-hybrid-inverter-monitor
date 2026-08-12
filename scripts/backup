@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root_dir=$(cd "$(dirname "$0")/.." && pwd)
+output=${1:-"$root_dir/sako-backup-$(date +%F-%H%M%S).sqlite3"}
+docker compose -f "$root_dir/compose.yaml" exec -T api python -c "import sqlite3; src=sqlite3.connect('/data/sako.db'); dst=sqlite3.connect('/tmp/backup.db'); src.backup(dst); dst.close(); src.close()"
+container=$(docker compose -f "$root_dir/compose.yaml" ps -q api)
+docker cp "$container:/tmp/backup.db" "$output"
+echo "Saved $output"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+target=${1:?Usage: scripts/deploy-pi user@raspberry-pi[:/opt/sako]}
+host=${target%%:*}
+destination=${target#*:}
+if [ "$destination" = "$target" ]; then destination=/opt/sako-inverter; fi
+ssh "$host" "mkdir -p '$destination'"
+rsync -az --delete --exclude .git --exclude .env --exclude data --exclude node_modules --exclude dist ./ "$host:$destination/"
+ssh "$host" "cd '$destination' && ./scripts/pi-install && docker compose up -d --build"
+echo "Deployment complete. Open http://sako.knnect.com after the router DNS override points to this Pi."

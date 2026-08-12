@@ -1,0 +1,2 @@
+# Cypress USB-to-serial/HID interface used by Sako hybrid inverter.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0665", ATTR{idProduct}=="5161", MODE="0660", GROUP="docker"

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "Host: $(hostname)"
+uname -a
+command -v docker >/dev/null || { echo "Docker Engine is required."; exit 1; }
+docker compose version
+test -e /dev/bus/usb || { echo "/dev/bus/usb is unavailable."; exit 1; }
+if lsusb -d 0665:5161 >/dev/null 2>&1; then
+  echo "Sako USB device 0665:5161 detected."
+else
+  echo "WARNING: USB inverter 0665:5161 is not detected; simulator mode remains usable."
+fi
+if grep -qi '20.04' /etc/os-release; then
+  echo "WARNING: Ubuntu 20.04 is end-of-standard-support. Plan an OS upgrade after commissioning."
+fi

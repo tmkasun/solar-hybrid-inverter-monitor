@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root_dir=$(cd "$(dirname "$0")/.." && pwd)
+sudo install -m 0644 "$root_dir/deployment/99-sako-inverter.rules" /etc/udev/rules.d/99-sako-inverter.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+"$root_dir/scripts/pi-preflight"
+if [ ! -f "$root_dir/.env" ]; then
+  cp "$root_dir/.env.example" "$root_dir/.env"
+  echo "Created .env. Set ADMIN_PASSWORD_HASH before starting production."
+fi

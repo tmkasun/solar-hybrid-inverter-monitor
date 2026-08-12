@@ -1,0 +1,17 @@
+import type { Capability, Status } from "./types";
+let csrf = sessionStorage.getItem("sako_csrf") || "";
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}), ...init.headers }, ...init });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({ detail: response.statusText }))).detail || response.statusText);
+  return response.json() as Promise<T>;
+}
+export const api = {
+  status: () => request<Status>("/api/status"),
+  capabilities: () => request<{ capabilities: Capability[] }>("/api/capabilities"),
+  history: () => request<{ samples: Array<Record<string, number | string | null>> }>("/api/history?hours=24"),
+  login: async (password: string) => { const data = await request<{ csrf_token: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) }); csrf = data.csrf_token; sessionStorage.setItem("sako_csrf", csrf); },
+  logout: async () => { await request("/api/auth/logout", { method: "POST" }); csrf = ""; sessionStorage.removeItem("sako_csrf"); },
+  change: (key: string, value: string) => request(`/api/settings/${key}`, { method: "POST", body: JSON.stringify({ value, confirmation: `APPLY ${key}` }) }),
+  audit: () => request<{ entries: Array<Record<string, string>> }>("/api/audit"),
+  diagnostics: () => request<{ diagnostics: Record<string, unknown>; latest: Status }>("/api/diagnostics")
+};

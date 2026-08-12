@@ -1,0 +1,26 @@
+services:
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_PATH: /data/sako.db
+    volumes:
+      - sako-data:/data
+      # USB device numbers can change after reconnect; mount the bus, not a single node.
+      - /dev/bus/usb:/dev/bus/usb
+    device_cgroup_rules:
+      - 'c 189:* rmw'
+    security_opt:
+      - no-new-privileges:true
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+volumes:
+  sako-data:

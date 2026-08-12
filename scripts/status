@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+docker compose ps
+curl --fail --silent http://localhost/api/health || true

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+backup=${1:?Usage: scripts/restore /path/to/backup.sqlite3}
+test -f "$backup"
+container=$(docker compose ps -q api)
+docker cp "$backup" "$container:/tmp/restore.sqlite3"
+docker compose exec -T api python -c "import sqlite3; src=sqlite3.connect('/tmp/restore.sqlite3'); dst=sqlite3.connect('/data/sako.db'); src.backup(dst); dst.close(); src.close()"
+echo "Restored. Restart the API: docker compose restart api"

@@ -1,0 +1,13 @@
+services:
+  api:
+    build: ./backend
+    environment:
+      INVERTER_MODE: simulator
+      DATABASE_PATH: /tmp/sako.db
+      ADMIN_PASSWORD_HASH: $2b$12$25VCqgb3TIbw6ZqH4g0qOOHsECOMRdeqznKF.oPQHI68shZHcbKT.
+    ports:
+      - "8000:8000"
+  web:
+    build: ./frontend
+    ports:
+      - "8080:80"
