@@ -9,7 +9,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from .capabilities import CAPABILITIES, command_for
@@ -42,7 +42,7 @@ async def _read_status(inverter: BaseInverter) -> dict[str, Any]:
         inverter.command("QPIGS"), inverter.command("QMOD"), inverter.command("QPIWS")
     )
     return {
-        "captured_at": datetime.now(UTC).isoformat(),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
         "connected": True,
         "mode": mode,
         "status": status_dict(qpigs),
