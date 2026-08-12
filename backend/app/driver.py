@@ -21,6 +21,7 @@ class BaseInverter(ABC):
 
 class UsbHidInverter(BaseInverter):
     """pyUSB interrupt transport. All calls are guarded to prevent frame interleaving."""
+    report_size = 8
 
     def __init__(self, vendor_id: int, product_id: int):
         self.vendor_id, self.product_id = vendor_id, product_id
@@ -32,19 +33,23 @@ class UsbHidInverter(BaseInverter):
 
     @staticmethod
     def _find_endpoints(configuration):
-        """Choose a HID interface with one interrupt IN and one interrupt OUT endpoint."""
+        """Choose a HID interface with an interrupt IN endpoint.
+
+        Some PIP HID devices have a matching interrupt OUT endpoint, while
+        others send HID output reports through the control endpoint.
+        """
         candidates = []
         for interface in configuration:
             endpoint_addresses = [endpoint.bEndpointAddress for endpoint in interface]
             endpoint_out = next((address for address in endpoint_addresses if not address & 0x80), None)
             endpoint_in = next((address for address in endpoint_addresses if address & 0x80), None)
-            if endpoint_out is not None and endpoint_in is not None:
+            if endpoint_in is not None:
                 # Prefer HID (USB class 3), but allow vendor-class PIP devices.
                 is_hid = interface.bInterfaceClass == 0x03
-                candidates.append((is_hid, interface.bInterfaceNumber, endpoint_out, endpoint_in))
+                candidates.append((is_hid, endpoint_out is not None, interface.bInterfaceNumber, endpoint_out, endpoint_in))
         if not candidates:
-            raise InverterError("no USB interface with both IN and OUT endpoints was found")
-        _, interface_number, endpoint_out, endpoint_in = sorted(candidates, reverse=True)[0]
+            raise InverterError("no USB interface with an interrupt IN endpoint was found")
+        _, _, interface_number, endpoint_out, endpoint_in = max(candidates, key=lambda candidate: candidate[:2])
         return interface_number, endpoint_out, endpoint_in
 
     def _connect(self) -> None:
@@ -72,11 +77,17 @@ class UsbHidInverter(BaseInverter):
         if self.device is None:
             self._connect()
         try:
-            assert self.endpoint_out is not None and self.endpoint_in is not None
-            self.device.write(self.endpoint_out, frame(command), timeout=2500)
+            assert self.interface is not None and self.endpoint_in is not None
+            payload = frame(command).ljust(self.report_size, b"\0")
+            if self.endpoint_out is not None:
+                self.device.write(self.endpoint_out, payload, timeout=2500)
+            else:
+                # HID SET_REPORT for devices, such as the Cypress 0665:5161,
+                # that declare Output reports but no interrupt OUT endpoint.
+                self.device.ctrl_transfer(0x21, 0x09, 0x0200, self.interface, payload, timeout=2500)
             chunks: list[bytes] = []
             for _ in range(8):
-                chunk = bytes(self.device.read(self.endpoint_in, 64, timeout=2500))
+                chunk = bytes(self.device.read(self.endpoint_in, self.report_size, timeout=2500))
                 chunks.append(chunk)
                 if b"\r" in chunk:
                     break
