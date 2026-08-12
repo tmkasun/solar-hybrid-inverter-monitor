@@ -1,12 +1,12 @@
 # Frontend-only deployment for home.knnect.lk.
-# Put this behind the host's HTTPS nginx proxy. API_UPSTREAM must be the Pi's
-# private LAN/VPN address and is not exposed to browsers.
+# Put this behind the host's HTTPS nginx proxy. Set PI_API_UPSTREAM to the Pi's
+# private LAN/VPN address when the API is available; the UI still starts without it.
 services:
   web:
     build: ./frontend
     restart: unless-stopped
     environment:
-      API_UPSTREAM: ${PI_API_UPSTREAM:?Set PI_API_UPSTREAM to the Pi's private address, for example 192.168.1.50:8000}
+      API_UPSTREAM: ${PI_API_UPSTREAM:-api:8000}
     ports:
       - "127.0.0.1:8080:80"
     security_opt:
