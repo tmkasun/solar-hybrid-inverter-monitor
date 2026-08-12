@@ -38,6 +38,15 @@ INVERTER_MODE=hardware ./scripts/inverter-cli set charger_source_priority solar 
 
 Only the supported, model-verified priority settings are available. `set` always requires `--yes`; use `./scripts/inverter-cli --help` for all options, including USB vendor/product ID overrides and JSON output.
 
+For troubleshooting, add `--verbose` before the command to show USB transport details and stack traces on stderr. The normal result remains on stdout, so JSON output can still be redirected safely:
+
+```sh
+INVERTER_MODE=hardware ./scripts/inverter-cli --verbose status --json >status.json
+docker compose logs --follow api
+```
+
+The API logs connection setup, protocol probes, failed USB commands (including malformed reply bytes), polling failures, settings changes, and database errors. It never logs passwords, session IDs, or CSRF tokens.
+
 ## Raspberry Pi deployment
 
 On the Pi, install Docker Engine and the Compose plugin. From the laptop run `scripts/deploy-pi user@PI_HOST:/opt/sako-inverter`. The first run copies the udev rule and creates `.env`; set a unique bcrypt `ADMIN_PASSWORD_HASH` there, then run the deploy command again.

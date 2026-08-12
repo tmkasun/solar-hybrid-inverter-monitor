@@ -51,8 +51,15 @@ class State:
             return
         try:
             qpigs, mode, warnings = await asyncio.gather(self.inverter.command("QPIGS"), self.inverter.command("QMOD"), self.inverter.command("QPIWS"))
+            replies = {"QPIGS": qpigs, "QMOD": mode, "QPIWS": warnings}
+            rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
+            if rejected:
+                raise InverterError(f"inverter rejected monitoring command(s): {rejected}")
+            status = status_dict(qpigs)
+            if all(value is None for value in status.values()):
+                raise InverterError(f"unexpected QPIGS response: {qpigs!r}")
             captured = datetime.now(timezone.utc).isoformat()
-            self.latest = {"connected": True, "mode": mode, "status": status_dict(qpigs), "warnings": warnings,
+            self.latest = {"connected": True, "mode": mode, "status": status, "warnings": warnings,
                            "captured_at": captured, "error": None}
             self.storage.add_sample(self.latest["status"])
             await self.broadcast({"type": "telemetry", "data": self.latest})

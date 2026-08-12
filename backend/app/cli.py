@@ -44,11 +44,18 @@ async def _read_status(inverter: BaseInverter) -> dict[str, Any]:
     qpigs, mode, warnings = await asyncio.gather(
         inverter.command("QPIGS"), inverter.command("QMOD"), inverter.command("QPIWS")
     )
+    replies = {"QPIGS": qpigs, "QMOD": mode, "QPIWS": warnings}
+    rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
+    if rejected:
+        raise InverterError(f"inverter rejected monitoring command(s): {rejected}")
+    status = status_dict(qpigs)
+    if all(value is None for value in status.values()):
+        raise InverterError(f"unexpected QPIGS response: {qpigs!r}")
     return {
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "connected": True,
         "mode": mode,
-        "status": status_dict(qpigs),
+        "status": status,
         "warnings": warnings,
     }
 
@@ -86,6 +93,9 @@ def _show_status(snapshot: dict[str, Any], as_json: bool) -> None:
 async def _show_info(inverter: BaseInverter, as_json: bool) -> None:
     commands = ("QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG")
     replies = {command: await inverter.command(command) for command in commands}
+    rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
+    if rejected:
+        raise InverterError(f"inverter rejected information command(s): {rejected}")
     replies["rating"] = parse_rating(replies["QPIRI"])
     if as_json:
         _print_json(replies)

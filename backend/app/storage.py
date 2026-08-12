@@ -61,32 +61,44 @@ class Storage:
             raise
 
     def history(self, hours: int) -> list[dict[str, Any]]:
-        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-        rows = self.connection.execute("SELECT captured_at, data FROM samples WHERE captured_at >= ? ORDER BY captured_at", (cutoff,)).fetchall()
-        return [{"captured_at": row["captured_at"], **json.loads(row["data"])} for row in rows]
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            rows = self.connection.execute("SELECT captured_at, data FROM samples WHERE captured_at >= ? ORDER BY captured_at", (cutoff,)).fetchall()
+            return [{"captured_at": row["captured_at"], **json.loads(row["data"])} for row in rows]
+        except (sqlite3.Error, json.JSONDecodeError):
+            logger.exception("Failed to read %d hours of telemetry history", hours)
+            raise
 
     def audit_rows(self, limit: int = 100) -> list[dict[str, Any]]:
-        return [dict(row) for row in self.connection.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,))]
+        try:
+            return [dict(row) for row in self.connection.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,))]
+        except sqlite3.Error:
+            logger.exception("Failed to read audit log")
+            raise
 
     def compact(self, raw_retention_days: int) -> None:
         """Roll old raw values into deterministic hourly/daily average records."""
-        cutoff = (datetime.now(UTC) - timedelta(days=raw_retention_days)).isoformat()
-        old_rows = self.connection.execute("SELECT captured_at, data FROM samples WHERE captured_at < ?", (cutoff,)).fetchall()
-        buckets: dict[str, list[dict]] = {}
-        for row in old_rows:
-            buckets.setdefault(row["captured_at"][:13] + ":00:00+00:00", []).append(json.loads(row["data"]))
-        for hour, points in buckets.items():
-            numeric: dict[str, list[float]] = {}
-            for point in points:
-                for key, value in point.items():
-                    if isinstance(value, (int, float)):
-                        numeric.setdefault(key, []).append(value)
-            averaged = {key: round(sum(values) / len(values), 3) for key, values in numeric.items()}
-            self.connection.execute("INSERT OR REPLACE INTO hourly_samples VALUES (?, ?, ?)", (hour, len(points), json.dumps(averaged)))
-        if old_rows:
-            self.connection.execute("DELETE FROM samples WHERE captured_at < ?", (cutoff,))
-            self.connection.commit()
-            logger.info("Compacted %d raw telemetry samples", len(old_rows))
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=raw_retention_days)).isoformat()
+            old_rows = self.connection.execute("SELECT captured_at, data FROM samples WHERE captured_at < ?", (cutoff,)).fetchall()
+            buckets: dict[str, list[dict]] = {}
+            for row in old_rows:
+                buckets.setdefault(row["captured_at"][:13] + ":00:00+00:00", []).append(json.loads(row["data"]))
+            for hour, points in buckets.items():
+                numeric: dict[str, list[float]] = {}
+                for point in points:
+                    for key, value in point.items():
+                        if isinstance(value, (int, float)):
+                            numeric.setdefault(key, []).append(value)
+                averaged = {key: round(sum(values) / len(values), 3) for key, values in numeric.items()}
+                self.connection.execute("INSERT OR REPLACE INTO hourly_samples VALUES (?, ?, ?)", (hour, len(points), json.dumps(averaged)))
+            if old_rows:
+                self.connection.execute("DELETE FROM samples WHERE captured_at < ?", (cutoff,))
+                self.connection.commit()
+                logger.info("Compacted %d raw telemetry samples", len(old_rows))
+        except (sqlite3.Error, json.JSONDecodeError):
+            logger.exception("Failed to compact telemetry older than %d days", raw_retention_days)
+            raise
 
     def close(self) -> None:
         self.connection.close()

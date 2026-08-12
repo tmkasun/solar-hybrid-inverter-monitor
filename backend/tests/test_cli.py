@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.cli import _require_pip_protocol, main
+from app.cli import _read_status, _require_pip_protocol, main
 from app.driver import InverterError
 
 
@@ -30,3 +30,13 @@ async def test_cli_rejects_devices_that_do_not_identify_as_pip():
 
     with pytest.raises(InverterError, match="no status or setting command was sent"):
         await _require_pip_protocol(NonPipInverter())
+
+
+@pytest.mark.asyncio
+async def test_cli_rejects_nak_monitoring_responses():
+    class RejectingInverter:
+        async def command(self, command):
+            return "NAK"
+
+    with pytest.raises(InverterError, match="rejected monitoring command"):
+        await _read_status(RejectingInverter())

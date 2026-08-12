@@ -33,6 +33,7 @@ class UsbHidInverter(BaseInverter):
         self.interface = None
         self.endpoint_out = None
         self.endpoint_in = None
+        self.interface_claimed = False
         self.lock = asyncio.Lock()
 
     @staticmethod
@@ -58,6 +59,7 @@ class UsbHidInverter(BaseInverter):
 
     def _connect(self) -> None:
         import usb.core
+        import usb.util
         logger.info("Connecting to USB inverter %04x:%04x", self.vendor_id, self.product_id)
         self.device = usb.core.find(idVendor=self.vendor_id, idProduct=self.product_id)
         if self.device is None:
@@ -83,6 +85,31 @@ class UsbHidInverter(BaseInverter):
                 self.device.detach_kernel_driver(self.interface)
         except (NotImplementedError, AttributeError):
             logger.debug("Kernel driver status is unavailable for USB interface %d", self.interface)
+        try:
+            usb.util.claim_interface(self.device, self.interface)
+            self.interface_claimed = True
+        except Exception as exc:
+            logger.exception("Unable to claim USB interface %d", self.interface)
+            self.device = None
+            raise InverterError(
+                f"could not claim USB interface {self.interface}; another inverter application may be using it: {exc}"
+            ) from exc
+
+    def _disconnect(self) -> None:
+        device, interface = self.device, self.interface
+        self.device = None
+        self.interface = None
+        self.endpoint_out = None
+        self.endpoint_in = None
+        claimed = self.interface_claimed
+        self.interface_claimed = False
+        if device is not None and claimed and interface is not None:
+            try:
+                import usb.util
+                usb.util.release_interface(device, interface)
+                usb.util.dispose_resources(device)
+            except Exception:
+                logger.warning("Failed to release USB interface %d", interface, exc_info=True)
 
     def _send(self, command: str) -> str:
         if self.device is None:
@@ -116,7 +143,7 @@ class UsbHidInverter(BaseInverter):
                 raise ValueError(f"{exc}; received bytes: {reply.hex(' ')}") from exc
         except Exception as exc:
             logger.exception("USB command %s failed", command)
-            self.device = None
+            self._disconnect()
             raise InverterError(f"USB command {command} failed: {exc}") from exc
 
     async def command(self, command: str) -> str:
@@ -128,7 +155,7 @@ class UsbHidInverter(BaseInverter):
 
     async def close(self) -> None:
         logger.info("Closing USB inverter connection")
-        self.device = None
+        self._disconnect()
 
 
 class SimulatorInverter(BaseInverter):
