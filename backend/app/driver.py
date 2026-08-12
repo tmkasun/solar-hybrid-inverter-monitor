@@ -26,6 +26,7 @@ class UsbHidInverter(BaseInverter):
     """pyUSB interrupt transport. All calls are guarded to prevent frame interleaving."""
     report_size = 8
     max_response_reports = 32
+    stale_report_timeout_ms = 25
 
     def __init__(self, vendor_id: int, product_id: int):
         self.vendor_id, self.product_id = vendor_id, product_id
@@ -94,6 +95,26 @@ class UsbHidInverter(BaseInverter):
             raise InverterError(
                 f"could not claim USB interface {self.interface}; another inverter application may be using it: {exc}"
             ) from exc
+        self._drain_input()
+
+    def _drain_input(self) -> None:
+        """Discard replies left behind by an interrupted prior client session."""
+        assert self.device is not None and self.endpoint_in is not None
+        stale_reports: list[bytes] = []
+        for _ in range(self.max_response_reports):
+            try:
+                report = bytes(self.device.read(self.endpoint_in, self.report_size, timeout=self.stale_report_timeout_ms))
+            except Exception as exc:
+                # libusb timeout is normally errno 110 on Linux or error -7.
+                if getattr(exc, "errno", None) == 110 or getattr(exc, "backend_error_code", None) == -7:
+                    break
+                logger.warning("Unable to drain USB input endpoint", exc_info=True)
+                break
+            if not report:
+                break
+            stale_reports.append(report)
+        if stale_reports:
+            logger.warning("Discarded %d stale USB input report(s): %s", len(stale_reports), b"".join(stale_reports).hex(" "))
 
     def _disconnect(self) -> None:
         device, interface = self.device, self.interface

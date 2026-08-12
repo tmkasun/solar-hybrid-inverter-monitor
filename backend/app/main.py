@@ -50,7 +50,9 @@ class State:
             await self.broadcast({"type": "connection", "data": self.latest})
             return
         try:
-            qpigs, mode, warnings = await asyncio.gather(self.inverter.command("QPIGS"), self.inverter.command("QMOD"), self.inverter.command("QPIWS"))
+            qpigs = await self.inverter.command("QPIGS")
+            mode = await self.inverter.command("QMOD")
+            warnings = await self.inverter.command("QPIWS")
             replies = {"QPIGS": qpigs, "QMOD": mode, "QPIWS": warnings}
             rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
             if rejected:

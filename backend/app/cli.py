@@ -41,9 +41,9 @@ def _print_fields(values: dict[str, Any]) -> None:
 
 
 async def _read_status(inverter: BaseInverter) -> dict[str, Any]:
-    qpigs, mode, warnings = await asyncio.gather(
-        inverter.command("QPIGS"), inverter.command("QMOD"), inverter.command("QPIWS")
-    )
+    qpigs = await inverter.command("QPIGS")
+    mode = await inverter.command("QMOD")
+    warnings = await inverter.command("QPIWS")
     replies = {"QPIGS": qpigs, "QMOD": mode, "QPIWS": warnings}
     rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
     if rejected:
