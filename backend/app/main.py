@@ -5,7 +5,7 @@ import hashlib
 import logging
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
@@ -22,6 +22,7 @@ from .storage import Storage
 logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+HISTORY_MAX_RANGE = timedelta(hours=720)
 
 
 class LoginRequest(BaseModel):
@@ -145,6 +146,12 @@ async def session_auth(sako_session: str | None = Cookie(default=None), x_csrf_t
     return sako_session
 
 
+def utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     return {"ok": True, "runtime_mode": settings.mode, "connected": state.latest["connected"], "error": state.latest["error"]}
@@ -163,7 +170,18 @@ async def capabilities() -> dict[str, Any]:
 
 
 @app.get("/api/history")
-async def history(hours: int = 24) -> dict[str, Any]:
+async def history(hours: int | None = None, start: datetime | None = None, end: datetime | None = None) -> dict[str, Any]:
+    if start or end:
+        if not start or not end:
+            raise HTTPException(422, "start and end must be provided together")
+        start_utc = utc_datetime(start)
+        end_utc = utc_datetime(end)
+        if start_utc > end_utc:
+            raise HTTPException(422, "start must be before end")
+        if end_utc - start_utc > HISTORY_MAX_RANGE:
+            raise HTTPException(422, "date range must be 720 hours or less")
+        return {"samples": state.storage.history_range(start_utc.isoformat(), end_utc.isoformat())}
+    hours = 24 if hours is None else hours
     if not 1 <= hours <= 720:
         raise HTTPException(422, "hours must be between 1 and 720")
     return {"samples": state.storage.history(hours)}

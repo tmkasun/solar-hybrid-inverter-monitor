@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
+import type { HistoryRequest } from "./api";
 import type { Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
 import "./styles.css";
 
@@ -12,7 +14,6 @@ function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
-  const [tab, setTab] = useState<"overview" | "analysis" | "settings" | "diagnostics">("overview");
   const [password, setPassword] = useState("");
   const [authenticated, setAuthenticated] = useState(Boolean(sessionStorage.getItem("sako_csrf")));
   const [message, setMessage] = useState("");
@@ -62,14 +63,25 @@ function App() {
 
   return <main>
     <header><div><h1>Sako Energy</h1><p>Local inverter monitoring and control</p></div><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? "Inverter connected" : "Inverter offline"}</div></header>
-    <nav>{(["overview", "analysis", "settings", "diagnostics"] as const).map(item => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
+    <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{route.label}</NavLink>)}</nav>
     {message && <div className="notice">{message}<button onClick={() => setMessage("")}>×</button></div>}
-    {tab === "overview" && <Overview status={status} />}
-    {tab === "analysis" && <DataAnalysis />}
-    {tab === "settings" && <Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} />}
-    {tab === "diagnostics" && <Diagnostics authenticated={authenticated} />}
+    <Routes>
+      <Route path="/" element={<Navigate to="/overview" replace />} />
+      <Route path="/overview" element={<Overview status={status} />} />
+      <Route path="/analysis" element={<DataAnalysis />} />
+      <Route path="/settings" element={<Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} />} />
+      <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} />} />
+      <Route path="*" element={<Navigate to="/overview" replace />} />
+    </Routes>
   </main>;
 }
+
+const appRoutes = [
+  { path: "/overview", label: "overview" },
+  { path: "/analysis", label: "analysis" },
+  { path: "/settings", label: "settings" },
+  { path: "/diagnostics", label: "diagnostics" },
+];
 
 function Overview({ status }: { status: Status | null }) {
   const values: StatusValues = status?.status || {};
@@ -81,27 +93,35 @@ function Overview({ status }: { status: Status | null }) {
 }
 
 function DataAnalysis() {
-  const [rangeHours, setRangeHours] = useState(24);
-  const [activeGroupId, setActiveGroupId] = useState("voltage");
-  const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>(["battery_voltage", "pv_input_voltage"]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchKey = searchParams.toString();
+  const analysisState = useMemo(() => parseAnalysisQuery(searchParams), [searchKey]);
+  const activeGroup = metricGroups.find(group => group.id === analysisState.activeGroupId) || metricGroups[0];
+  const selectedMetrics = analysisState.selectedMetricIds.map(id => metricDefinitions[id]).filter(Boolean);
+  const historyRequest = useMemo(() => historyRequestForRange(analysisState.range), [analysisState.range]);
+  const historyKey = rangeKey(analysisState.range);
+  const [customStart, setCustomStart] = useState(() => analysisState.range.mode === "custom" ? dateTimeInputValue(analysisState.range.start) : "");
+  const [customEnd, setCustomEnd] = useState(() => analysisState.range.mode === "custom" ? dateTimeInputValue(analysisState.range.end) : "");
   const [samples, setSamples] = useState<HistorySample[]>([]);
   const [zoomRange, setZoomRange] = useState<ChartZoomRange | null>(null);
+  const [rawDataOpen, setRawDataOpen] = useState(false);
+  const [rawFilter, setRawFilter] = useState("");
+  const [rawSort, setRawSort] = useState<RawSort>({ key: "captured_at", direction: "desc" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const activeGroup = metricGroups.find(group => group.id === activeGroupId) || metricGroups[0];
-  const selectedMetrics = selectedMetricIds.map(id => metricDefinitions[id]).filter(Boolean);
   const enrichedSamples = useMemo(() => samples.map(enrichSample), [samples]);
-  const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, rangeHours) })), [enrichedSamples, rangeHours]);
+  const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, analysisState.range) })), [enrichedSamples, historyKey]);
   const stats = useMemo(() => selectedMetrics.map(metric => metricStats(metric, enrichedSamples)), [selectedMetrics, enrichedSamples]);
-  const tableRows = useMemo(() => [...enrichedSamples].reverse(), [enrichedSamples]);
+  const rawRows = useMemo(() => sortedFilteredRows(enrichedSamples, selectedMetrics, rawFilter, rawSort), [enrichedSamples, selectedMetrics, rawFilter, rawSort]);
   const zoomed = Boolean(zoomRange && chartData.length > 0 && (zoomRange.startIndex > 0 || zoomRange.endIndex < chartData.length - 1));
   const activeZoomRange = zoomRange && chartData.length > 0 ? clampZoomRange(zoomRange, chartData.length) : null;
   const zoomLabel = activeZoomRange ? zoomRangeLabel(chartData, activeZoomRange) : "Full selected range";
+  const customRangeError = customDateRangeError(customStart, customEnd);
 
   const loadHistory = async () => {
     setLoading(true);
     try {
-      const history = await api.history(rangeHours);
+      const history = await api.history(historyRequest);
       setSamples(history.samples);
       setError("");
     } catch (e) {
@@ -110,39 +130,74 @@ function DataAnalysis() {
       setLoading(false);
     }
   };
-  useEffect(() => { void loadHistory(); }, [rangeHours]);
-  useEffect(() => { setZoomRange(null); }, [rangeHours, samples.length]);
+  useEffect(() => { void loadHistory(); }, [historyKey]);
+  useEffect(() => { setZoomRange(null); }, [historyKey, samples.length]);
+  useEffect(() => {
+    if (analysisState.range.mode === "custom") {
+      setCustomStart(dateTimeInputValue(analysisState.range.start));
+      setCustomEnd(dateTimeInputValue(analysisState.range.end));
+    } else {
+      setCustomStart("");
+      setCustomEnd("");
+    }
+  }, [historyKey]);
+  useEffect(() => {
+    if (rawSort.key !== "captured_at" && !analysisState.selectedMetricIds.includes(rawSort.key)) setRawSort({ key: "captured_at", direction: "desc" });
+  }, [rawSort.key, analysisState.selectedMetricIds]);
+
+  const updateAnalysisState = (next: AnalysisUrlState) => setSearchParams(analysisSearchParams(next));
 
   const selectGroup = (group: MetricGroup) => {
-    setActiveGroupId(group.id);
-    setSelectedMetricIds(group.defaultMetricIds);
+    updateAnalysisState({ ...analysisState, activeGroupId: group.id, selectedMetricIds: group.defaultMetricIds });
+  };
+  const selectPresetRange = (range: TimeRange) => updateAnalysisState({ ...analysisState, range: { mode: "preset", hours: range.hours, param: range.param } });
+  const applyCustomRange = () => {
+    const start = inputDateTimeToIso(customStart);
+    const end = inputDateTimeToIso(customEnd);
+    if (!start || !end || new Date(start).getTime() > new Date(end).getTime()) return;
+    updateAnalysisState({ ...analysisState, range: { mode: "custom", start, end } });
   };
   const toggleMetric = (id: string) => {
-    setSelectedMetricIds(current => current.includes(id) ? current.length > 1 ? current.filter(item => item !== id) : current : [...current, id]);
+    const current = analysisState.selectedMetricIds;
+    const selectedMetricIds = current.includes(id) ? current.length > 1 ? current.filter(item => item !== id) : current : [...current, id];
+    updateAnalysisState({ ...analysisState, selectedMetricIds });
   };
 
   return <section className="analysis-page">
     <div className="section-title"><div><h2>Data analysis</h2><p>Compare inverter telemetry by parameter group and time range.</p></div><button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? "Loading..." : "Refresh"}</button></div>
     <div className="analysis-controls panel">
-      <div><span>Range</span><div className="segmented">{timeRanges.map(range => <button key={range.hours} className={rangeHours === range.hours ? "active" : ""} onClick={() => setRangeHours(range.hours)}>{range.label}</button>)}</div></div>
-      <div><span>Parameter type</span><div className="segmented metric-groups">{metricGroups.map(group => <button key={group.id} className={activeGroupId === group.id ? "active" : ""} onClick={() => selectGroup(group)}>{group.label}</button>)}</div></div>
+      <div><span>Range</span><div className="segmented">{timeRanges.map(range => <button key={range.hours} className={analysisState.range.mode === "preset" && analysisState.range.hours === range.hours ? "active" : ""} onClick={() => selectPresetRange(range)}>{range.label}</button>)}</div>
+        <div className="custom-range">
+          <label><span>Start</span><input type="datetime-local" value={customStart} onChange={event => setCustomStart(event.target.value)} /></label>
+          <label><span>End</span><input type="datetime-local" value={customEnd} onChange={event => setCustomEnd(event.target.value)} /></label>
+          <button className={analysisState.range.mode === "custom" ? "active" : ""} disabled={!customStart || !customEnd || Boolean(customRangeError)} onClick={applyCustomRange}>Apply</button>
+        </div>
+        {customRangeError && <small className="custom-range-error">{customRangeError}</small>}
+      </div>
+      <div><span>Parameter type</span><div className="segmented metric-groups">{metricGroups.map(group => <button key={group.id} className={analysisState.activeGroupId === group.id ? "active" : ""} onClick={() => selectGroup(group)}>{group.label}</button>)}</div></div>
       <div><span>Parameters</span><div className="metric-toggles">{activeGroup.metricIds.map(id => {
         const metric = metricDefinitions[id];
-        const checked = selectedMetricIds.includes(id);
+        const checked = analysisState.selectedMetricIds.includes(id);
         return <label key={id} className={checked ? "checked" : ""}><input type="checkbox" checked={checked} onChange={() => toggleMetric(id)} /> <i style={{ background: metric.color }} />{metric.label}</label>;
       })}</div></div>
     </div>
     {error && <p className="error">{error}</p>}
     <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{stat.metric.label}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>Avg {formatMetricValue(stat.metric, stat.average)} · Min {formatMetricValue(stat.metric, stat.min)} · Max {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>
-    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{activeGroup.label} trend</h3><span>{samples.length} samples · {timeRangeLabel(rangeHours)} · {zoomLabel}</span></div><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>Reset zoom</button></div>
+    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{activeGroup.label} trend</h3><span>{samples.length} samples · {timeRangeLabel(analysisState.range)} · {zoomLabel}</span></div><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>Reset zoom</button></div>
       {loading && samples.length === 0 ? <div className="empty-chart">Loading telemetry history...</div> : chartData.length === 0 ? <div className="empty-chart">No telemetry samples found for this range.</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/><Tooltip formatter={(value, name) => {
         const metric = metricDefinitions[String(name)];
         return [metric ? formatMetricValue(metric, value as number) : value, metric?.label || name];
       }} /><Legend formatter={(value) => metricDefinitions[String(value)]?.label || value} />{selectedMetrics.map(metric => <Line key={metric.id} type="monotone" dataKey={metric.id} stroke={metric.color} dot={false} strokeWidth={2.4} connectNulls />)}<Brush dataKey="at" height={32} stroke="#55b964" fill="#10202a" travellerWidth={12} startIndex={activeZoomRange?.startIndex ?? 0} endIndex={activeZoomRange?.endIndex ?? chartData.length - 1} onChange={range => setZoomRange(normalizeZoomRange(range, chartData.length))} /></LineChart></ResponsiveContainer></div>}
     </div>
-    <div className="panel analysis-table-panel"><div className="analysis-panel-head"><h3>Telemetry data</h3><span>Newest first</span></div>
-      {tableRows.length === 0 ? <p>No telemetry rows to show.</p> : <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>Captured</th>{selectedMetrics.map(metric => <th key={metric.id}>{metric.label}</th>)}</tr></thead><tbody>{tableRows.map(row => <tr key={row.captured_at}><td>{formatDate(row.captured_at)}</td>{selectedMetrics.map(metric => <td key={metric.id}>{formatMetricValue(metric, metricValue(row, metric.id))}</td>)}</tr>)}</tbody></table></div>}
-    </div>
+    <details className="panel analysis-table-panel" open={rawDataOpen} onToggle={event => setRawDataOpen(event.currentTarget.open)}><summary><span>Raw telemetry data</span><small>{rawDataOpen ? `${rawRows.length} of ${samples.length} rows` : "Collapsed by default"}</small></summary>
+      <div className="raw-data-tools">
+        <label><span>Filter</span><input value={rawFilter} onChange={event => setRawFilter(event.target.value)} placeholder="Time or value" /></label>
+        <label><span>Sort by</span><select value={rawSort.key} onChange={event => setRawSort(current => ({ ...current, key: event.target.value }))}><option value="captured_at">Captured time</option>{selectedMetrics.map(metric => <option key={metric.id} value={metric.id}>{metric.label}</option>)}</select></label>
+        <label><span>Direction</span><select value={rawSort.direction} onChange={event => setRawSort(current => ({ ...current, direction: event.target.value as SortDirection }))}><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>
+        {(rawFilter || rawSort.key !== "captured_at" || rawSort.direction !== "desc") && <button className="quiet" onClick={() => { setRawFilter(""); setRawSort({ key: "captured_at", direction: "desc" }); }}>Clear</button>}
+      </div>
+      {rawRows.length === 0 ? <p>No telemetry rows match the current filter.</p> : <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>Captured</th>{selectedMetrics.map(metric => <th key={metric.id}>{metric.label}</th>)}</tr></thead><tbody>{rawRows.map(row => <tr key={row.captured_at}><td>{formatDate(row.captured_at)}</td>{selectedMetrics.map(metric => <td key={metric.id}>{formatMetricValue(metric, metricValue(row, metric.id))}</td>)}</tr>)}</tbody></table></div>}
+    </details>
   </section>;
 }
 
@@ -183,6 +238,11 @@ type MetricDefinition = { id: string; source?: string; label: string; unit: stri
 type MetricGroup = { id: string; label: string; metricIds: string[]; defaultMetricIds: string[] };
 type AnalysisSample = HistorySample & Record<string, HistoryValue>;
 type ChartZoomRange = { startIndex: number; endIndex: number };
+type SortDirection = "asc" | "desc";
+type RawSort = { key: string; direction: SortDirection };
+type TimeRange = { label: string; param: string; hours: number };
+type AnalysisRangeState = { mode: "preset"; hours: number; param: string } | { mode: "custom"; start: string; end: string };
+type AnalysisUrlState = { activeGroupId: string; selectedMetricIds: string[]; range: AnalysisRangeState };
 
 const metricDefinitions: Record<string, MetricDefinition> = {
   battery_voltage: { id: "battery_voltage", label: "Battery voltage", unit: " V", digits: 1, color: "#f7c948" },
@@ -211,15 +271,86 @@ const metricGroups: MetricGroup[] = [
   { id: "temperature", label: "Temperature", metricIds: ["inverter_temperature_c"], defaultMetricIds: ["inverter_temperature_c"] },
 ];
 
-const timeRanges = [
-  { label: "1h", hours: 1 },
-  { label: "6h", hours: 6 },
-  { label: "12h", hours: 12 },
-  { label: "24h", hours: 24 },
-  { label: "3d", hours: 72 },
-  { label: "7d", hours: 168 },
-  { label: "30d", hours: 720 },
+const timeRanges: TimeRange[] = [
+  { label: "1h", param: "1h", hours: 1 },
+  { label: "6h", param: "6h", hours: 6 },
+  { label: "12h", param: "12h", hours: 12 },
+  { label: "24h", param: "24h", hours: 24 },
+  { label: "3d", param: "3d", hours: 72 },
+  { label: "7d", param: "7d", hours: 168 },
+  { label: "30d", param: "30d", hours: 720 },
 ];
+
+const defaultAnalysisGroupId = "voltage";
+const defaultTimeRange = timeRanges[0];
+
+function parseAnalysisQuery(params: URLSearchParams): AnalysisUrlState {
+  const activeGroup = metricGroups.find(group => group.id === params.get("group")) || metricGroups.find(group => group.id === defaultAnalysisGroupId) || metricGroups[0];
+  const metricIds = (params.get("metrics") || "").split(",").map(item => item.trim()).filter(id => activeGroup.metricIds.includes(id));
+  const start = params.get("start");
+  const end = params.get("end");
+  const parsedStart = validIsoDate(start);
+  const parsedEnd = validIsoDate(end);
+  const range = parsedStart && parsedEnd && new Date(parsedStart).getTime() <= new Date(parsedEnd).getTime()
+    ? { mode: "custom" as const, start: parsedStart, end: parsedEnd }
+    : presetRange(params.get("range"));
+  return { activeGroupId: activeGroup.id, selectedMetricIds: metricIds.length ? metricIds : activeGroup.defaultMetricIds, range };
+}
+
+function presetRange(value: string | null): AnalysisRangeState {
+  const range = timeRanges.find(item => item.param === value) || defaultTimeRange;
+  return { mode: "preset", hours: range.hours, param: range.param };
+}
+
+function validIsoDate(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function analysisSearchParams(state: AnalysisUrlState) {
+  const params = new URLSearchParams();
+  params.set("group", state.activeGroupId);
+  params.set("metrics", state.selectedMetricIds.join(","));
+  if (state.range.mode === "custom") {
+    params.set("start", state.range.start);
+    params.set("end", state.range.end);
+  } else {
+    params.set("range", state.range.param);
+  }
+  return params;
+}
+
+function historyRequestForRange(range: AnalysisRangeState): HistoryRequest {
+  return range.mode === "custom" ? { start: range.start, end: range.end } : { hours: range.hours };
+}
+
+function rangeKey(range: AnalysisRangeState) {
+  return range.mode === "custom" ? `custom:${range.start}:${range.end}` : `preset:${range.hours}`;
+}
+
+function dateTimeInputValue(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (amount: number) => String(amount).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function inputDateTimeToIso(value: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function customDateRangeError(start: string, end: string) {
+  if (!start && !end) return "";
+  if (!start || !end) return "Select both start and end.";
+  const startTime = new Date(start).getTime();
+  const endTime = new Date(end).getTime();
+  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return "Select valid dates.";
+  if (startTime > endTime) return "Start must be before end.";
+  return "";
+}
 
 function enrichSample(sample: HistorySample): AnalysisSample {
   const pvVoltage = finiteNumber(sample.pv_input_voltage);
@@ -255,6 +386,31 @@ function formatMetricValue(metric: MetricDefinition, value: number | string | nu
   return display(value, metric.unit, metric.digits);
 }
 
+function sortedFilteredRows(samples: AnalysisSample[], metrics: MetricDefinition[], filter: string, sort: RawSort) {
+  const query = filter.trim().toLowerCase();
+  const filtered = query ? samples.filter(sample => rawRowText(sample, metrics).includes(query)) : samples;
+  return [...filtered].sort((left, right) => compareRows(left, right, sort));
+}
+
+function rawRowText(sample: AnalysisSample, metrics: MetricDefinition[]) {
+  return [
+    formatDate(sample.captured_at),
+    sample.captured_at,
+    ...metrics.flatMap(metric => [metric.label, formatMetricValue(metric, metricValue(sample, metric.id))]),
+  ].join(" ").toLowerCase();
+}
+
+function compareRows(left: AnalysisSample, right: AnalysisSample, sort: RawSort) {
+  const direction = sort.direction === "asc" ? 1 : -1;
+  if (sort.key === "captured_at") return direction * (new Date(left.captured_at).getTime() - new Date(right.captured_at).getTime());
+  const leftValue = metricValue(left, sort.key);
+  const rightValue = metricValue(right, sort.key);
+  if (leftValue === null && rightValue === null) return 0;
+  if (leftValue === null) return 1;
+  if (rightValue === null) return -1;
+  return direction * (leftValue - rightValue);
+}
+
 function downsample<T>(rows: T[], maxPoints: number): T[] {
   if (rows.length <= maxPoints) return rows;
   const step = Math.ceil(rows.length / maxPoints);
@@ -279,8 +435,9 @@ function zoomRangeLabel(rows: Array<AnalysisSample & { at: string }>, range: Cha
   return `Zoom ${shortDateTime(start)} to ${shortDateTime(end)}`;
 }
 
-function chartTimeLabel(value: string, hours: number) {
+function chartTimeLabel(value: string, range: AnalysisRangeState) {
   const date = new Date(value);
+  const hours = range.mode === "preset" ? range.hours : (new Date(range.end).getTime() - new Date(range.start).getTime()) / 3_600_000;
   return hours > 24 ? date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" }) : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -288,7 +445,9 @@ function shortDateTime(value: string) {
   return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function timeRangeLabel(hours: number) {
+function timeRangeLabel(range: AnalysisRangeState) {
+  if (range.mode === "custom") return `${shortDateTime(range.start)} to ${shortDateTime(range.end)}`;
+  const hours = range.hours;
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
   return `${hours / 24} day${hours === 24 ? "" : "s"}`;
 }
@@ -565,7 +724,7 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
     {data && <>
       <div className="diagnostics-summary">
         <DiagnosticsSummaryCard label="Connection" value={latest?.connected ? "Connected" : "Offline"} tone={latest?.connected ? "ok" : "warn"} detail={latest?.error || latest?.warnings || "Live telemetry available"} />
-        <DiagnosticsSummaryCard label="Mode" value={latest?.mode || "Unknown"} detail={formatDate(latest?.captured_at)} />
+        <DiagnosticsSummaryCard label="Mode" value={formatInverterMode(latest?.mode)} detail={formatDate(latest?.captured_at)} />
         <DiagnosticsSummaryCard label="Protocol" value={protocolOk ? "PIP compatible" : "Needs attention"} tone={protocolOk ? "ok" : "warn"} detail={protocol || protocolError || "No protocol reply"} />
         <DiagnosticsSummaryCard label="Active flags" value={String(activeFlags.length)} tone={activeFlags.length ? "warn" : "ok"} detail={activeFlags.length ? activeFlags.map(flag => flag.label).join(", ") : "No active status flags"} />
       </div>
@@ -632,17 +791,34 @@ function errorValue(value: unknown): string | null {
 const ratingValueLabels: Record<string, Record<string, string>> = {
   battery_type: { "0": "AGM", "1": "Flooded", "2": "User-defined", AGM: "AGM", FLOODED: "Flooded", USER: "User-defined" },
   input_voltage_range: { UPS: "UPS / narrow input range", APL: "Appliance / wide input range", "0": "Appliance / wide input range", "1": "UPS / narrow input range" },
-  output_source_priority: { "0": "Utility first", "1": "Solar first", "2": "SBU priority", utility: "Utility first", solar: "Solar first", sbu: "SBU priority" },
-  charger_source_priority: { "0": "Utility first", "1": "Solar first", "2": "Solar and utility", "3": "Solar only", solar_first: "Solar first", solar_utility: "Solar and utility", solar: "Solar only" },
+  output_source_priority: { "0": "Utility first", "00": "Utility first", "1": "Solar first", "01": "Solar first", "2": "SBU priority", "02": "SBU priority", utility: "Utility first", solar: "Solar first", sbu: "SBU priority" },
+  charger_source_priority: { "0": "Utility first", "00": "Utility first", "1": "Solar first", "01": "Solar first", "2": "Solar and utility", "02": "Solar and utility", "3": "Solar only", "03": "Solar only", solar_first: "Solar first", solar_utility: "Solar and utility", solar: "Solar only" },
+};
+
+const inverterModeLabels: Record<string, string> = {
+  P: "Power on",
+  S: "Standby",
+  L: "Line mode",
+  B: "Battery mode",
+  F: "Fault mode",
+  H: "Power saving mode",
 };
 
 function formatRating(key: string, value: unknown, unit = "", digits = 1) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
   const label = ratingValueLabels[key]?.[raw] || ratingValueLabels[key]?.[raw.toUpperCase()];
+  if (label && (key === "output_source_priority" || key === "charger_source_priority")) return `${label} (${raw})`;
   if (label) return label;
   if (!unit) return String(value);
   return display(typeof value === "number" || typeof value === "string" ? value : null, unit, digits);
+}
+
+function formatInverterMode(value: string | null | undefined) {
+  if (!value) return "Unknown";
+  const raw = value.trim();
+  const label = inverterModeLabels[raw.toUpperCase()];
+  return label ? `${label} (${raw})` : `Unknown (${raw})`;
 }
 
 function formatRawValue(value: unknown) {
@@ -656,4 +832,4 @@ function formatDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : "No live update yet";
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(<BrowserRouter><App /></BrowserRouter>);

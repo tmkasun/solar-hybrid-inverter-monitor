@@ -69,6 +69,17 @@ class Storage:
             logger.exception("Failed to read %d hours of telemetry history", hours)
             raise
 
+    def history_range(self, start: str, end: str) -> list[dict[str, Any]]:
+        try:
+            rows = self.connection.execute(
+                "SELECT captured_at, data FROM samples WHERE captured_at >= ? AND captured_at <= ? ORDER BY captured_at",
+                (start, end),
+            ).fetchall()
+            return [{"captured_at": row["captured_at"], **json.loads(row["data"])} for row in rows]
+        except (sqlite3.Error, json.JSONDecodeError):
+            logger.exception("Failed to read telemetry history between %s and %s", start, end)
+            raise
+
     def audit_rows(self, limit: int = 100) -> list[dict[str, Any]]:
         try:
             return [dict(row) for row in self.connection.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,))]
