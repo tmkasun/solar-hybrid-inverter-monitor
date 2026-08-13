@@ -201,8 +201,8 @@ async def execute(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.CRITICAL + 1,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True)
     try:
         return asyncio.run(execute(args))
     except (InverterError, ValueError) as exc:

@@ -40,6 +40,19 @@ def test_usb_driver_accepts_hid_control_output_reports():
     assert UsbHidInverter._find_endpoints((Interface(),)) == (0, None, 0x81)
 
 
+def test_usb_driver_explains_busy_hid_interface():
+    class BusyError(Exception):
+        errno = 16
+
+        def __str__(self):
+            return "[Errno 16] Resource busy"
+
+    message = UsbHidInverter._claim_interface_error(0, BusyError())
+    assert "already in use" in message
+    assert "sudo systemctl stop sako-inverter-api" in message
+    assert "docker compose down" in message
+
+
 def test_usb_driver_uses_hid_set_report_without_an_out_endpoint():
     class Device:
         def __init__(self):

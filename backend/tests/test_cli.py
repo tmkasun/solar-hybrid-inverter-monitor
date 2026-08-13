@@ -15,7 +15,9 @@ def test_cli_status_json_uses_simulator(capsys):
 
 def test_cli_setting_requires_explicit_confirmation(capsys):
     assert main(["--mode", "simulator", "set", "output_source_priority", "sbu"]) == 2
-    assert "without --yes" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "without --yes" in err
+    assert "Traceback" not in err
 
     assert main(["--mode", "simulator", "set", "output_source_priority", "sbu", "--yes"]) == 0
     assert "POP02" in capsys.readouterr().out

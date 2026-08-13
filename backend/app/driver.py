@@ -38,6 +38,17 @@ class UsbHidInverter(BaseInverter):
         self.lock = asyncio.Lock()
 
     @staticmethod
+    def _claim_interface_error(interface: int, exc: Exception) -> str:
+        if getattr(exc, "errno", None) == 16 or getattr(exc, "backend_error_code", None) == -6:
+            return (
+                f"could not claim USB interface {interface}: it is already in use ({exc}). "
+                "Stop other inverter clients before running the direct CLI, for example "
+                "`sudo systemctl stop sako-inverter-api` or `docker compose down`. "
+                "If no inverter app is running, check for UPS daemons such as NUT/usbhid-ups or apcupsd."
+            )
+        return f"could not claim USB interface {interface}; another inverter application may be using it: {exc}"
+
+    @staticmethod
     def _find_endpoints(configuration):
         """Choose a HID interface with an interrupt IN endpoint.
 
@@ -98,9 +109,7 @@ class UsbHidInverter(BaseInverter):
         except Exception as exc:
             logger.exception("Unable to claim USB interface %d", self.interface)
             self.device = None
-            raise InverterError(
-                f"could not claim USB interface {self.interface}; another inverter application may be using it: {exc}"
-            ) from exc
+            raise InverterError(self._claim_interface_error(self.interface, exc)) from exc
         self._drain_input()
 
     def _drain_input(self) -> None:

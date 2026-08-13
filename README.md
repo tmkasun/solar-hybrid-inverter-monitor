@@ -47,6 +47,16 @@ INVERTER_MODE=hardware ./scripts/inverter-cli --verbose status --json >status.js
 docker compose logs --follow api
 ```
 
+If the CLI reports `could not claim USB interface 0` or `Resource busy`, another process already owns the inverter HID interface. Stop the API before using the direct CLI, then restart it when finished:
+
+```sh
+sudo systemctl stop sako-inverter-api
+INVERTER_MODE=hardware ./scripts/inverter-cli status
+sudo systemctl start sako-inverter-api
+```
+
+If the earlier Docker deployment is still running on the Pi, stop it with `docker compose down`. If neither app is running, check for UPS daemons such as NUT/usbhid-ups or apcupsd and disable them for this USB device.
+
 The API logs connection setup, protocol probes, failed USB commands (including malformed reply bytes), polling failures, settings changes, and database errors. It never logs passwords, session IDs, or CSRF tokens.
 
 ## Raspberry Pi deployment
