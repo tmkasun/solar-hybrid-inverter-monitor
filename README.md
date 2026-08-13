@@ -65,6 +65,8 @@ On the Pi, install the API service (this installs Python packages in `backend/.v
 
 ```sh
 cd ~/projects/solar-hybrid-inverter-monitor
+# If Python reports "No module named ensurepip":
+sudo apt update && sudo apt install -y python3-venv
 # Only if this Pi previously ran the Docker stack:
 docker compose down
 ./scripts/pi-api-install

@@ -9,6 +9,17 @@ escaped_user=$(printf '%s' "$service_user" | sed 's/[&/]/\\&/g')
 command -v python3 >/dev/null || { echo "Python 3 is required."; exit 1; }
 "$root_dir/scripts/pi-api-preflight"
 
+show_venv_install_help() {
+  echo "Could not create a virtual environment."
+  echo "Install Python venv support and run this script again:"
+  echo "  sudo apt update && sudo apt install -y python3-venv"
+}
+
+if ! python3 -c 'import ensurepip, venv' >/dev/null 2>&1; then
+  show_venv_install_help
+  exit 1
+fi
+
 venv_dir=$root_dir/backend/.venv
 venv_python=$venv_dir/bin/python
 system_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -19,11 +30,14 @@ fi
 
 if [ "$venv_python_version" != "$system_python_version" ]; then
   echo "Creating Python $system_python_version virtual environment (previous: ${venv_python_version:-missing})."
-  python3 -m venv --clear "$venv_dir"
+  python3 -m venv --clear "$venv_dir" || {
+    show_venv_install_help
+    exit 1
+  }
 fi
 
 "$venv_python" -m ensurepip --upgrade || {
-  echo "Could not create a virtual environment. Install python3-venv and run this script again."
+  show_venv_install_help
   exit 1
 }
 "$venv_python" -m pip install --upgrade pip
