@@ -11,6 +11,7 @@ class Settings:
     mode: str = os.getenv("INVERTER_MODE", "simulator")
     database_path: str = os.getenv("DATABASE_PATH", "data/sako.db")
     poll_seconds: float = float(os.getenv("INVERTER_POLL_SECONDS", "5"))
+    db_sample_seconds: float = float(os.getenv("INVERTER_DB_SAMPLE_SECONDS", "15"))
     raw_retention_days: int = int(os.getenv("RAW_RETENTION_DAYS", "30"))
     admin_password_hash: str = os.getenv("ADMIN_PASSWORD_HASH", "")
     vendor_id: int = _integer("INVERTER_USB_VENDOR_ID", 0x0665)

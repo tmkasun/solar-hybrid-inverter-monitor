@@ -38,9 +38,9 @@ class Storage:
     def now() -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def add_sample(self, data: dict[str, Any]) -> str:
+    def add_sample(self, data: dict[str, Any], timestamp: str | None = None) -> str:
         try:
-            timestamp = self.now()
+            timestamp = timestamp or self.now()
             self.connection.execute("INSERT INTO samples VALUES (?, ?)", (timestamp, json.dumps(data)))
             self.connection.commit()
             logger.debug("Stored telemetry sample at %s", timestamp)

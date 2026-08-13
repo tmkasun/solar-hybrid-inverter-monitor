@@ -5,10 +5,11 @@ from app.storage import Storage
 
 def test_storage_reads_audits_and_compacts_samples(tmp_path):
     storage = Storage(str(tmp_path / "inverter.db"))
-    storage.add_sample({"battery_voltage": 51.2})
+    timestamp = storage.add_sample({"battery_voltage": 51.2}, "2026-01-01T00:00:00+00:00")
     storage.audit("setting_change", "accepted", "output_source_priority", new_value="sbu")
 
-    assert len(storage.history(1)) == 1
+    assert timestamp == "2026-01-01T00:00:00+00:00"
+    assert storage.history_range(timestamp, timestamp) == [{"captured_at": timestamp, "battery_voltage": 51.2}]
     assert storage.audit_rows()[0]["result"] == "accepted"
 
     storage.compact(-1)

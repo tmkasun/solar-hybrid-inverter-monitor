@@ -66,6 +66,7 @@ class State:
         self.diagnostics: dict[str, Any] = {}
         self.sockets: set[WebSocket] = set()
         self.task: asyncio.Task | None = None
+        self.last_stored_sample_at: datetime | None = None
         logger.info("Inverter state initialized in %s mode", settings.mode)
 
     async def poll(self) -> None:
@@ -89,7 +90,10 @@ class State:
             captured = datetime.now(timezone.utc).isoformat()
             self.latest = {"connected": True, "mode": mode, "status": status, "warnings": warnings,
                            "captured_at": captured, "error": None}
-            self.storage.add_sample(self.latest["status"])
+            captured_at = datetime.fromisoformat(captured)
+            if self.should_store_sample(captured_at):
+                self.storage.add_sample(self.latest["status"], captured)
+                self.last_stored_sample_at = captured_at
             await self.broadcast({"type": "telemetry", "data": self.latest})
         except (InverterError, ValueError) as exc:
             logger.exception("Inverter telemetry poll failed")
@@ -107,6 +111,12 @@ class State:
             except Exception:
                 logger.exception("Telemetry compaction failed; polling will continue")
             await asyncio.sleep(settings.poll_seconds)
+
+    def should_store_sample(self, captured_at: datetime) -> bool:
+        return (
+            self.last_stored_sample_at is None
+            or (captured_at - self.last_stored_sample_at).total_seconds() >= settings.db_sample_seconds
+        )
 
     async def discover(self) -> dict[str, Any]:
         commands = ("QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG")

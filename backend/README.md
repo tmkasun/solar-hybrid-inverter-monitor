@@ -66,12 +66,17 @@ sudo systemctl restart sako-inverter-api
 INVERTER_MODE=hardware
 DATABASE_PATH=/var/lib/sako-inverter/sako.db
 INVERTER_POLL_SECONDS=5
+INVERTER_DB_SAMPLE_SECONDS=15
 INVERTER_USB_VENDOR_ID=0x0665
 INVERTER_USB_PRODUCT_ID=0x5161
 ADMIN_PASSWORD_HASH='$2b$12$PASTE_THE_GENERATED_HASH_HERE'
 LOG_LEVEL=INFO
 LOG_FILE=/var/solar.log
 ```
+
+`INVERTER_POLL_SECONDS` controls live telemetry reads and WebSocket updates.
+`INVERTER_DB_SAMPLE_SECONDS` controls how often successful telemetry is saved
+to history.
 
 For local development, the backend can run in simulator mode:
 

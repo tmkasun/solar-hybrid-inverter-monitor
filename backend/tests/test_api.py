@@ -1,5 +1,7 @@
 import asyncio
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -84,3 +86,15 @@ async def test_broadcast_drops_slow_websocket(monkeypatch):
         assert slow_socket not in state.sockets
     finally:
         state.sockets.discard(slow_socket)
+
+
+def test_database_sample_interval_is_independent_from_live_poll(monkeypatch):
+    monkeypatch.setattr(main_module, "settings", SimpleNamespace(db_sample_seconds=15))
+    captured_at = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    state_stub = SimpleNamespace(last_stored_sample_at=None)
+
+    assert main_module.State.should_store_sample(state_stub, captured_at) is True
+
+    state_stub.last_stored_sample_at = captured_at
+    assert main_module.State.should_store_sample(state_stub, captured_at.replace(second=14)) is False
+    assert main_module.State.should_store_sample(state_stub, captured_at.replace(second=15)) is True
