@@ -23,6 +23,7 @@ logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 HISTORY_MAX_RANGE = timedelta(hours=720)
+BROADCAST_TIMEOUT_SECONDS = 2.0
 
 
 class LoginRequest(BaseModel):
@@ -75,8 +76,14 @@ class State:
 
     async def poll_loop(self) -> None:
         while True:
-            await self.poll()
-            self.storage.compact(settings.raw_retention_days)
+            try:
+                await self.poll()
+            except Exception:
+                logger.exception("Telemetry poll loop iteration failed; polling will continue")
+            try:
+                self.storage.compact(settings.raw_retention_days)
+            except Exception:
+                logger.exception("Telemetry compaction failed; polling will continue")
             await asyncio.sleep(settings.poll_seconds)
 
     async def discover(self) -> dict[str, Any]:
@@ -106,9 +113,12 @@ class State:
 
     async def broadcast(self, event: dict[str, Any]) -> None:
         stale: list[WebSocket] = []
-        for socket in self.sockets:
+        for socket in list(self.sockets):
             try:
-                await socket.send_json(event)
+                await asyncio.wait_for(socket.send_json(event), timeout=BROADCAST_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning("Dropping slow websocket client after %.1fs send timeout", BROADCAST_TIMEOUT_SECONDS)
+                stale.append(socket)
             except Exception:
                 logger.warning("Dropping failed websocket client", exc_info=True)
                 stale.append(socket)

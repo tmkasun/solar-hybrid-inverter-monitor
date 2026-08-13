@@ -1,8 +1,10 @@
+import asyncio
 import json
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import app.main as main_module
 from app.main import app, state
 from app.storage import Storage
 
@@ -66,3 +68,19 @@ async def test_history_accepts_hours_and_custom_ranges(tmp_path):
     finally:
         state.storage.close()
         state.storage = previous_storage
+
+
+@pytest.mark.asyncio
+async def test_broadcast_drops_slow_websocket(monkeypatch):
+    class SlowSocket:
+        async def send_json(self, _: dict):
+            await asyncio.sleep(1)
+
+    slow_socket = SlowSocket()
+    monkeypatch.setattr(main_module, "BROADCAST_TIMEOUT_SECONDS", 0.01)
+    state.sockets.add(slow_socket)
+    try:
+        await state.broadcast({"type": "telemetry", "data": {}})
+        assert slow_socket not in state.sockets
+    finally:
+        state.sockets.discard(slow_socket)
