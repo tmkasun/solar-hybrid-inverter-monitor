@@ -6,6 +6,8 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from logging.handlers import WatchedFileHandler
+from pathlib import Path
 from typing import Any
 
 import bcrypt
@@ -19,8 +21,28 @@ from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInvert
 from .protocol import parse_rating, status_dict
 from .storage import Storage
 
-logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO),
-                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+
+def configure_logging() -> None:
+    level = getattr(logging, settings.log_level, logging.INFO)
+    formatter = logging.Formatter(LOG_FORMAT)
+    logging.basicConfig(level=level, format=LOG_FORMAT)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    if settings.log_file:
+        log_path = Path(settings.log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = WatchedFileHandler(log_path)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        for name in ("", "uvicorn", "uvicorn.access"):
+            target_logger = logging.getLogger(name)
+            if not any(isinstance(handler, WatchedFileHandler) and handler.baseFilename == str(log_path) for handler in target_logger.handlers):
+                target_logger.addHandler(file_handler)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 HISTORY_MAX_RANGE = timedelta(hours=720)
 BROADCAST_TIMEOUT_SECONDS = 2.0

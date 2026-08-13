@@ -21,7 +21,11 @@ Check the service with:
 ```sh
 sudo systemctl status sako-inverter-api
 sudo journalctl -u sako-inverter-api -f
+sudo tail -f /var/solar.log
 ```
+
+The installer also configures `/var/solar.log` and `/etc/logrotate.d/sako-inverter-api`.
+The file rolls at 5 MB and keeps 5 compressed backups.
 
 ## Create the Admin Password Hash
 
@@ -66,6 +70,7 @@ INVERTER_USB_VENDOR_ID=0x0665
 INVERTER_USB_PRODUCT_ID=0x5161
 ADMIN_PASSWORD_HASH='$2b$12$PASTE_THE_GENERATED_HASH_HERE'
 LOG_LEVEL=INFO
+LOG_FILE=/var/solar.log
 ```
 
 For local development, the backend can run in simulator mode:

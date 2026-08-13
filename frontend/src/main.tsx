@@ -86,9 +86,10 @@ const appRoutes = [
 function Overview({ status }: { status: Status | null }) {
   const values: StatusValues = status?.status || {};
   const activeFlags = values.status_flags?.filter(flag => flag.active) || [];
+  const now = useNow(1000);
   return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} />
     <EnergyOverview values={values} connected={Boolean(status?.connected)} />
-    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {status?.captured_at ? new Date(status.captured_at).toLocaleString() : "—"}</p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
+    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {formatLastUpdate(status?.captured_at, now)}</p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
   </section>;
 }
 
@@ -233,6 +234,39 @@ const display = (value: number | string | null | undefined, unit = "", digits = 
   if (!Number.isFinite(amount)) return "—";
   return `${amount.toFixed(digits)}${unit}`;
 };
+const relativeTimeFormatter = new Intl.RelativeTimeFormat([], { numeric: "always" });
+const relativeTimeUnits: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+  ["year", 31_536_000],
+  ["month", 2_592_000],
+  ["week", 604_800],
+  ["day", 86_400],
+  ["hour", 3_600],
+  ["minute", 60],
+  ["second", 1],
+];
+
+function useNow(intervalMs: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+function formatLastUpdate(value: string | null | undefined, now: number) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${formatRelativeTime(date.getTime(), now)} (${date.toLocaleString()})`;
+}
+
+function formatRelativeTime(time: number, now: number) {
+  const diffSeconds = Math.round((time - now) / 1000);
+  const absSeconds = Math.abs(diffSeconds);
+  const [unit, secondsPerUnit] = relativeTimeUnits.find(([, seconds]) => absSeconds >= seconds) || ["second", 1];
+  return relativeTimeFormatter.format(Math.round(diffSeconds / secondsPerUnit), unit);
+}
 
 type MetricDefinition = { id: string; source?: string; label: string; unit: string; digits: number; color: string };
 type MetricGroup = { id: string; label: string; metricIds: string[]; defaultMetricIds: string[] };

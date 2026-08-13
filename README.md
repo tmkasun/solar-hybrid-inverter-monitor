@@ -83,9 +83,10 @@ docker compose down
 sudoedit /etc/sako-inverter/api.env
 sudo systemctl restart sako-inverter-api
 sudo journalctl -u sako-inverter-api -f
+sudo tail -f /var/solar.log
 ```
 
-Set a bcrypt `ADMIN_PASSWORD_HASH` in `/etc/sako-inverter/api.env`. Its database is stored at `/var/lib/sako-inverter/sako.db`. Permit TCP port 8000 only from the private IP of the `home.knnect.lk` server, for example with UFW:
+Set a bcrypt `ADMIN_PASSWORD_HASH` in `/etc/sako-inverter/api.env`. Its database is stored at `/var/lib/sako-inverter/sako.db`. API logs are also written to `/var/solar.log`, with logrotate keeping 5 compressed 5 MB backups. Permit TCP port 8000 only from the private IP of the `home.knnect.lk` server, for example with UFW:
 
 ```sh
 sudo ufw allow from HOME_SERVER_PRIVATE_IP to any port 8000 proto tcp
@@ -99,7 +100,20 @@ printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\n' > .env.ui
 docker compose --env-file .env.ui -f compose.ui.yaml up -d --build
 ```
 
-`PI_API_UPSTREAM` is used only inside the frontend container and should be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. Do not set it to the public frontend hostname; the browser-facing site should proxy to the local frontend container, and the frontend container should proxy only to the private Pi API address. If `PI_API_UPSTREAM` is missing or points to an unavailable API, the UI container still starts and serves static files, but live API-backed data returns gateway errors until the API is reachable. The container is bound to `127.0.0.1:8080`, so it is not publicly reachable by itself. On `home.knnect.lk`, install [home.knnect.lk.docker.nginx.conf.template](deployment/home.knnect.lk.docker.nginx.conf.template) as the HTTPS virtual host, validate it with `sudo nginx -t`, then reload nginx. It assumes an existing Let's Encrypt certificate for `home.knnect.lk`.
+`PI_API_UPSTREAM` is used only inside the frontend container and should be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. Do not set it to the public frontend hostname; the browser-facing site should proxy to the local frontend container, and the frontend container should proxy only to the private Pi API address. The container is bound to `127.0.0.1:8080`, so it is not publicly reachable by itself. On `home.knnect.lk`, install [home.knnect.lk.docker.nginx.conf.template](deployment/home.knnect.lk.docker.nginx.conf.template) as the HTTPS virtual host, validate it with `sudo nginx -t`, then reload nginx. It assumes an existing Let's Encrypt certificate for `home.knnect.lk`.
+
+If `/api/*` returns `502 Bad Gateway` from the UI but direct API requests work elsewhere, check from inside the frontend container:
+
+```sh
+./scripts/check-ui-proxy
+```
+
+The `direct upstream health` step must return `{"ok":true,...}`. If it fails, set `PI_API_UPSTREAM` in `.env.ui` to an address reachable from the `home.knnect.lk` server/container, then recreate the UI container:
+
+```sh
+printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\n' > .env.ui
+docker compose --env-file .env.ui -f compose.ui.yaml up -d --force-recreate
+```
 
 The previous static-file option remains available through [home.knnect.lk.nginx.conf.template](deployment/home.knnect.lk.nginx.conf.template) and `scripts/deploy-ui`.
 

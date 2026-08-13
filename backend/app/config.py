@@ -16,6 +16,7 @@ class Settings:
     vendor_id: int = _integer("INVERTER_USB_VENDOR_ID", 0x0665)
     product_id: int = _integer("INVERTER_USB_PRODUCT_ID", 0x5161)
     log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_file: str = os.getenv("LOG_FILE", "")
 
 
 settings = Settings()

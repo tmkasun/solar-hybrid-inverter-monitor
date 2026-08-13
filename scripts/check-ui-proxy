@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root_dir=$(cd "$(dirname "$0")/.." && pwd)
+env_file=${1:-"$root_dir/.env.ui"}
+
+compose_args=()
+if [ -f "$env_file" ]; then
+  compose_args+=(--env-file "$env_file")
+fi
+compose_args+=(-f "$root_dir/compose.ui.yaml")
+
+echo "== UI compose service =="
+docker compose "${compose_args[@]}" ps
+
+echo
+echo "== Proxy checks from inside the frontend container =="
+docker compose "${compose_args[@]}" exec -T web sh -u <<'SH'
+echo "API_UPSTREAM=${API_UPSTREAM:-<unset>}"
+
+echo
+echo "-- rendered nginx upstream --"
+sed -n '/sako_api_upstream/p;/location \/api\//,/^  }/p' /etc/nginx/conf.d/default.conf
+
+upstream_host="${API_UPSTREAM%:*}"
+
+echo
+echo "-- container DNS --"
+if command -v getent >/dev/null 2>&1; then
+  getent hosts "$upstream_host" || true
+elif command -v nslookup >/dev/null 2>&1; then
+  nslookup "$upstream_host" || true
+else
+  echo "no DNS lookup tool available"
+fi
+
+echo
+echo "-- direct upstream health --"
+if ! wget -S -O- -T 8 "http://${API_UPSTREAM}/api/health"; then
+  echo "direct upstream health failed"
+fi
+
+echo
+echo
+echo "-- proxy health through local nginx --"
+if ! wget -S -O- -T 8 "http://127.0.0.1/api/health"; then
+  echo "local nginx proxy health failed"
+fi
+SH
+
+echo
+echo "== Recent frontend nginx logs =="
+docker compose "${compose_args[@]}" logs --tail=80 web
