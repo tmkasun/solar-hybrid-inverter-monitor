@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
-import type { Capability, DiagnosticsResponse, Status, StatusValues } from "./types";
+import type { Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
 import "./styles.css";
 
 const energySystemBackground = new URL("./assets/energy-system-background.png", import.meta.url).href;
@@ -10,10 +10,9 @@ const settingsPriorityDiagram = new URL("./assets/settings-priority-diagram.png"
 
 function App() {
   const [status, setStatus] = useState<Status | null>(null);
-  const [history, setHistory] = useState<Array<Record<string, number | string | null>>>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
-  const [tab, setTab] = useState<"overview" | "settings" | "diagnostics">("overview");
+  const [tab, setTab] = useState<"overview" | "analysis" | "settings" | "diagnostics">("overview");
   const [password, setPassword] = useState("");
   const [authenticated, setAuthenticated] = useState(Boolean(sessionStorage.getItem("sako_csrf")));
   const [message, setMessage] = useState("");
@@ -21,15 +20,14 @@ function App() {
 
   const load = async () => {
     try {
-      const [nextStatus, nextHistory, nextCapabilities] = await Promise.all([api.status(), api.history(), api.capabilities()]);
-      setStatus(nextStatus); setHistory(nextHistory.samples); setCapabilities(nextCapabilities.capabilities); setCapabilityDiagnostics(nextCapabilities.diagnostics || {});
+      const [nextStatus, nextCapabilities] = await Promise.all([api.status(), api.capabilities()]);
+      setStatus(nextStatus); setCapabilities(nextCapabilities.capabilities); setCapabilityDiagnostics(nextCapabilities.diagnostics || {});
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to reach API"); }
   };
   useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? "Inverter setting applied." : `Command failed: ${data.data.error}`); }; return () => socket.close(); }, []);
 
   const login = async (event: FormEvent) => { event.preventDefault(); try { await api.login(password); setAuthenticated(true); setPassword(""); setMessage("Signed in."); } catch (error) { setMessage(error instanceof Error ? error.message : "Login failed"); } };
   const logout = async () => { await api.logout(); setAuthenticated(false); setMessage("Signed out."); };
-  const points = useMemo(() => history.map((sample) => ({ ...sample, at: new Date(String(sample.captured_at)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })), [history]);
   const currentSettings = useMemo(() => currentPrioritySettings(capabilityDiagnostics), [capabilityDiagnostics]);
   const applySetting = async (key: string, value: string) => {
     const label = settingDisplayLabel(key, value);
@@ -64,21 +62,87 @@ function App() {
 
   return <main>
     <header><div><h1>Sako Energy</h1><p>Local inverter monitoring and control</p></div><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? "Inverter connected" : "Inverter offline"}</div></header>
-    <nav>{(["overview", "settings", "diagnostics"] as const).map(item => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
+    <nav>{(["overview", "analysis", "settings", "diagnostics"] as const).map(item => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
     {message && <div className="notice">{message}<button onClick={() => setMessage("")}>×</button></div>}
-    {tab === "overview" && <Overview status={status} points={points} />}
+    {tab === "overview" && <Overview status={status} />}
+    {tab === "analysis" && <DataAnalysis />}
     {tab === "settings" && <Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} />}
     {tab === "diagnostics" && <Diagnostics authenticated={authenticated} />}
   </main>;
 }
 
-function Overview({ status, points }: { status: Status | null; points: Array<Record<string, number | string | null>> }) {
+function Overview({ status }: { status: Status | null }) {
   const values: StatusValues = status?.status || {};
   const activeFlags = values.status_flags?.filter(flag => flag.active) || [];
   return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} />
     <EnergyOverview values={values} connected={Boolean(status?.connected)} />
-    <div className="panel"><h2>24-hour voltage trend</h2><div className="chart"><ResponsiveContainer><LineChart data={points}><XAxis dataKey="at" minTickGap={36}/><YAxis/><Tooltip/><Line type="monotone" dataKey="battery_voltage" stroke="#f7c948" dot={false}/><Line type="monotone" dataKey="pv_input_voltage" stroke="#50c878" dot={false}/></LineChart></ResponsiveContainer></div></div>
     <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {status?.captured_at ? new Date(status.captured_at).toLocaleString() : "—"}</p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
+  </section>;
+}
+
+function DataAnalysis() {
+  const [rangeHours, setRangeHours] = useState(24);
+  const [activeGroupId, setActiveGroupId] = useState("voltage");
+  const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>(["battery_voltage", "pv_input_voltage"]);
+  const [samples, setSamples] = useState<HistorySample[]>([]);
+  const [zoomRange, setZoomRange] = useState<ChartZoomRange | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const activeGroup = metricGroups.find(group => group.id === activeGroupId) || metricGroups[0];
+  const selectedMetrics = selectedMetricIds.map(id => metricDefinitions[id]).filter(Boolean);
+  const enrichedSamples = useMemo(() => samples.map(enrichSample), [samples]);
+  const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, rangeHours) })), [enrichedSamples, rangeHours]);
+  const stats = useMemo(() => selectedMetrics.map(metric => metricStats(metric, enrichedSamples)), [selectedMetrics, enrichedSamples]);
+  const tableRows = useMemo(() => [...enrichedSamples].reverse(), [enrichedSamples]);
+  const zoomed = Boolean(zoomRange && chartData.length > 0 && (zoomRange.startIndex > 0 || zoomRange.endIndex < chartData.length - 1));
+  const activeZoomRange = zoomRange && chartData.length > 0 ? clampZoomRange(zoomRange, chartData.length) : null;
+  const zoomLabel = activeZoomRange ? zoomRangeLabel(chartData, activeZoomRange) : "Full selected range";
+
+  const loadHistory = async () => {
+    setLoading(true);
+    try {
+      const history = await api.history(rangeHours);
+      setSamples(history.samples);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load telemetry history");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void loadHistory(); }, [rangeHours]);
+  useEffect(() => { setZoomRange(null); }, [rangeHours, samples.length]);
+
+  const selectGroup = (group: MetricGroup) => {
+    setActiveGroupId(group.id);
+    setSelectedMetricIds(group.defaultMetricIds);
+  };
+  const toggleMetric = (id: string) => {
+    setSelectedMetricIds(current => current.includes(id) ? current.length > 1 ? current.filter(item => item !== id) : current : [...current, id]);
+  };
+
+  return <section className="analysis-page">
+    <div className="section-title"><div><h2>Data analysis</h2><p>Compare inverter telemetry by parameter group and time range.</p></div><button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? "Loading..." : "Refresh"}</button></div>
+    <div className="analysis-controls panel">
+      <div><span>Range</span><div className="segmented">{timeRanges.map(range => <button key={range.hours} className={rangeHours === range.hours ? "active" : ""} onClick={() => setRangeHours(range.hours)}>{range.label}</button>)}</div></div>
+      <div><span>Parameter type</span><div className="segmented metric-groups">{metricGroups.map(group => <button key={group.id} className={activeGroupId === group.id ? "active" : ""} onClick={() => selectGroup(group)}>{group.label}</button>)}</div></div>
+      <div><span>Parameters</span><div className="metric-toggles">{activeGroup.metricIds.map(id => {
+        const metric = metricDefinitions[id];
+        const checked = selectedMetricIds.includes(id);
+        return <label key={id} className={checked ? "checked" : ""}><input type="checkbox" checked={checked} onChange={() => toggleMetric(id)} /> <i style={{ background: metric.color }} />{metric.label}</label>;
+      })}</div></div>
+    </div>
+    {error && <p className="error">{error}</p>}
+    <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{stat.metric.label}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>Avg {formatMetricValue(stat.metric, stat.average)} · Min {formatMetricValue(stat.metric, stat.min)} · Max {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>
+    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{activeGroup.label} trend</h3><span>{samples.length} samples · {timeRangeLabel(rangeHours)} · {zoomLabel}</span></div><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>Reset zoom</button></div>
+      {loading && samples.length === 0 ? <div className="empty-chart">Loading telemetry history...</div> : chartData.length === 0 ? <div className="empty-chart">No telemetry samples found for this range.</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/><Tooltip formatter={(value, name) => {
+        const metric = metricDefinitions[String(name)];
+        return [metric ? formatMetricValue(metric, value as number) : value, metric?.label || name];
+      }} /><Legend formatter={(value) => metricDefinitions[String(value)]?.label || value} />{selectedMetrics.map(metric => <Line key={metric.id} type="monotone" dataKey={metric.id} stroke={metric.color} dot={false} strokeWidth={2.4} connectNulls />)}<Brush dataKey="at" height={32} stroke="#55b964" fill="#10202a" travellerWidth={12} startIndex={activeZoomRange?.startIndex ?? 0} endIndex={activeZoomRange?.endIndex ?? chartData.length - 1} onChange={range => setZoomRange(normalizeZoomRange(range, chartData.length))} /></LineChart></ResponsiveContainer></div>}
+    </div>
+    <div className="panel analysis-table-panel"><div className="analysis-panel-head"><h3>Telemetry data</h3><span>Newest first</span></div>
+      {tableRows.length === 0 ? <p>No telemetry rows to show.</p> : <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>Captured</th>{selectedMetrics.map(metric => <th key={metric.id}>{metric.label}</th>)}</tr></thead><tbody>{tableRows.map(row => <tr key={row.captured_at}><td>{formatDate(row.captured_at)}</td>{selectedMetrics.map(metric => <td key={metric.id}>{formatMetricValue(metric, metricValue(row, metric.id))}</td>)}</tr>)}</tbody></table></div>}
+    </div>
   </section>;
 }
 
@@ -114,6 +178,120 @@ const display = (value: number | string | null | undefined, unit = "", digits = 
   if (!Number.isFinite(amount)) return "—";
   return `${amount.toFixed(digits)}${unit}`;
 };
+
+type MetricDefinition = { id: string; source?: string; label: string; unit: string; digits: number; color: string };
+type MetricGroup = { id: string; label: string; metricIds: string[]; defaultMetricIds: string[] };
+type AnalysisSample = HistorySample & Record<string, HistoryValue>;
+type ChartZoomRange = { startIndex: number; endIndex: number };
+
+const metricDefinitions: Record<string, MetricDefinition> = {
+  battery_voltage: { id: "battery_voltage", label: "Battery voltage", unit: " V", digits: 1, color: "#f7c948" },
+  pv_input_voltage: { id: "pv_input_voltage", label: "PV voltage", unit: " V", digits: 1, color: "#50c878" },
+  grid_voltage: { id: "grid_voltage", label: "Grid voltage", unit: " V", digits: 1, color: "#7dd3fc" },
+  output_voltage: { id: "output_voltage", label: "Output voltage", unit: " V", digits: 1, color: "#c084fc" },
+  output_active_power_w: { id: "output_active_power_w", label: "Output power", unit: " W", digits: 0, color: "#fb923c" },
+  output_apparent_power_va: { id: "output_apparent_power_va", label: "Apparent power", unit: " VA", digits: 0, color: "#f472b6" },
+  pv_power_w: { id: "pv_power_w", label: "PV power", unit: " W", digits: 0, color: "#22c55e" },
+  battery_capacity_percent: { id: "battery_capacity_percent", label: "Battery SOC", unit: "%", digits: 0, color: "#a3e635" },
+  battery_charge_current: { id: "battery_charge_current", label: "Charge current", unit: " A", digits: 0, color: "#14b8a6" },
+  battery_discharge_current: { id: "battery_discharge_current", label: "Discharge current", unit: " A", digits: 0, color: "#f97316" },
+  pv_input_current: { id: "pv_input_current", label: "PV current", unit: " A", digits: 1, color: "#86efac" },
+  grid_frequency: { id: "grid_frequency", label: "Grid frequency", unit: " Hz", digits: 1, color: "#38bdf8" },
+  load_percent: { id: "load_percent", label: "Load", unit: "%", digits: 0, color: "#facc15" },
+  inverter_temperature_c: { id: "inverter_temperature_c", label: "Inverter temp", unit: "°C", digits: 1, color: "#ef4444" },
+};
+
+const metricGroups: MetricGroup[] = [
+  { id: "voltage", label: "Voltage", metricIds: ["battery_voltage", "pv_input_voltage", "grid_voltage", "output_voltage"], defaultMetricIds: ["battery_voltage", "pv_input_voltage"] },
+  { id: "power", label: "Power", metricIds: ["output_active_power_w", "output_apparent_power_va", "pv_power_w"], defaultMetricIds: ["output_active_power_w", "pv_power_w"] },
+  { id: "battery", label: "Battery", metricIds: ["battery_capacity_percent", "battery_voltage", "battery_charge_current", "battery_discharge_current"], defaultMetricIds: ["battery_capacity_percent", "battery_voltage"] },
+  { id: "pv", label: "PV", metricIds: ["pv_input_voltage", "pv_input_current", "pv_power_w"], defaultMetricIds: ["pv_input_voltage", "pv_power_w"] },
+  { id: "grid", label: "Grid", metricIds: ["grid_voltage", "grid_frequency"], defaultMetricIds: ["grid_voltage", "grid_frequency"] },
+  { id: "load", label: "Load", metricIds: ["load_percent", "output_active_power_w", "output_apparent_power_va"], defaultMetricIds: ["load_percent", "output_active_power_w"] },
+  { id: "temperature", label: "Temperature", metricIds: ["inverter_temperature_c"], defaultMetricIds: ["inverter_temperature_c"] },
+];
+
+const timeRanges = [
+  { label: "1h", hours: 1 },
+  { label: "6h", hours: 6 },
+  { label: "12h", hours: 12 },
+  { label: "24h", hours: 24 },
+  { label: "3d", hours: 72 },
+  { label: "7d", hours: 168 },
+  { label: "30d", hours: 720 },
+];
+
+function enrichSample(sample: HistorySample): AnalysisSample {
+  const pvVoltage = finiteNumber(sample.pv_input_voltage);
+  const pvCurrent = finiteNumber(sample.pv_input_current);
+  return { ...sample, pv_power_w: pvVoltage !== null && pvCurrent !== null ? Math.round(pvVoltage * pvCurrent) : null };
+}
+
+function finiteNumber(value: HistoryValue | number | string | null | undefined): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && value.trim() !== "") {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? amount : null;
+  }
+  return null;
+}
+
+function metricValue(sample: AnalysisSample, id: string): number | null {
+  return finiteNumber(sample[metricDefinitions[id]?.source || id]);
+}
+
+function metricStats(metric: MetricDefinition, samples: AnalysisSample[]) {
+  const values = samples.map(sample => metricValue(sample, metric.id)).filter((value): value is number => value !== null);
+  return {
+    metric,
+    latest: values.at(-1) ?? null,
+    min: values.length ? Math.min(...values) : null,
+    max: values.length ? Math.max(...values) : null,
+    average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
+  };
+}
+
+function formatMetricValue(metric: MetricDefinition, value: number | string | null | undefined) {
+  return display(value, metric.unit, metric.digits);
+}
+
+function downsample<T>(rows: T[], maxPoints: number): T[] {
+  if (rows.length <= maxPoints) return rows;
+  const step = Math.ceil(rows.length / maxPoints);
+  return rows.filter((_, index) => index % step === 0 || index === rows.length - 1);
+}
+
+function normalizeZoomRange(range: { startIndex?: number; endIndex?: number } | undefined, length: number): ChartZoomRange | null {
+  if (!range || length <= 0 || range.startIndex === undefined || range.endIndex === undefined) return null;
+  return clampZoomRange({ startIndex: range.startIndex, endIndex: range.endIndex }, length);
+}
+
+function clampZoomRange(range: ChartZoomRange, length: number): ChartZoomRange {
+  const startIndex = Math.min(Math.max(0, range.startIndex), Math.max(0, length - 1));
+  const endIndex = Math.min(Math.max(startIndex, range.endIndex), Math.max(0, length - 1));
+  return { startIndex, endIndex };
+}
+
+function zoomRangeLabel(rows: Array<AnalysisSample & { at: string }>, range: ChartZoomRange) {
+  const start = rows[range.startIndex]?.captured_at;
+  const end = rows[range.endIndex]?.captured_at;
+  if (!start || !end) return "Full selected range";
+  return `Zoom ${shortDateTime(start)} to ${shortDateTime(end)}`;
+}
+
+function chartTimeLabel(value: string, hours: number) {
+  const date = new Date(value);
+  return hours > 24 ? date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" }) : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function shortDateTime(value: string) {
+  return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function timeRangeLabel(hours: number) {
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  return `${hours / 24} day${hours === 24 ? "" : "s"}`;
+}
 
 function EnergyFlow({ values, connected }: { values: StatusValues; connected: boolean }) {
   const pvPower = numeric(values.pv_input_voltage) * numeric(values.pv_input_current);

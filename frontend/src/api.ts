@@ -1,4 +1,4 @@
-import type { CapabilitiesResponse, DiagnosticsResponse, Status } from "./types";
+import type { CapabilitiesResponse, DiagnosticsResponse, HistorySample, Status } from "./types";
 let csrf = sessionStorage.getItem("sako_csrf") || "";
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}), ...init.headers }, ...init });
@@ -8,7 +8,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   status: () => request<Status>("/api/status"),
   capabilities: () => request<CapabilitiesResponse>("/api/capabilities"),
-  history: () => request<{ samples: Array<Record<string, number | string | null>> }>("/api/history?hours=24"),
+  history: (hours = 24) => request<{ samples: HistorySample[] }>(`/api/history?hours=${hours}`),
   login: async (password: string) => { const data = await request<{ csrf_token: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) }); csrf = data.csrf_token; sessionStorage.setItem("sako_csrf", csrf); },
   logout: async () => { await request("/api/auth/logout", { method: "POST" }); csrf = ""; sessionStorage.removeItem("sako_csrf"); },
   change: (key: string, value: string) => request(`/api/settings/${key}`, { method: "POST", body: JSON.stringify({ value, confirmation: `APPLY ${key}` }) }),
