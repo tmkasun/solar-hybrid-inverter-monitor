@@ -61,8 +61,6 @@ const display = (value: number | string | null | undefined, unit = "", digits = 
 
 function EnergyFlow({ values, connected }: { values: StatusValues; connected: boolean }) {
   const [panelCount, setPanelCount] = useState(() => Number(localStorage.getItem("sako_panel_count")) || 8);
-  const [clock, setClock] = useState(() => new Date());
-  useEffect(() => { const timer = window.setInterval(() => setClock(new Date()), 60_000); return () => window.clearInterval(timer); }, []);
   const pvPower = numeric(values.pv_input_voltage) * numeric(values.pv_input_current);
   const loadPower = numeric(values.output_active_power_w);
   const chargePower = numeric(values.battery_voltage) * numeric(values.battery_charge_current);
@@ -71,38 +69,35 @@ function EnergyFlow({ values, connected }: { values: StatusValues; connected: bo
   const gridPower = loadPower + Math.max(0, batteryPower) - pvPower - Math.max(0, -batteryPower);
   const batteryPercent = Math.min(100, Math.max(0, numeric(values.battery_capacity_percent)));
   const updatePanels = (count: number) => { const safeCount = Math.min(24, Math.max(1, count || 1)); setPanelCount(safeCount); localStorage.setItem("sako_panel_count", String(safeCount)); };
-  const hour = clock.getHours() + clock.getMinutes() / 60;
-  const isNight = hour < 6 || hour >= 18;
-  const daylight = Math.min(1, Math.max(0, (hour - 6) / 12));
-  const skyX = isNight ? (hour < 6 ? 100 + hour * 26 : 1050 - (hour - 18) * 26) : 80 + daylight * 1040;
-  const skyY = isNight ? 70 : 105 - Math.sin(daylight * Math.PI) * 60;
   const solarActive = pvPower > 1;
   const gridActive = Math.abs(gridPower) > 1;
   const batteryActive = Math.abs(batteryPower) > 1;
   const loadActive = loadPower > 1;
-  const gridVoltage = numeric(values.grid_voltage);
-  const solarLine = "M 744 242 V 300 H 610 V 370";
-  const gridLine = "M 175 456 H 396 L 460 370 H 522";
-  const batteryLine = "M 566 407 V 430";
-  const loadLine = "M 610 370 H 705 V 418 H 840";
-  const panelColumns = Math.min(6, Math.ceil(Math.sqrt(panelCount * 1.5)));
+  const gridDirection = gridPower < -1 ? "Exporting" : gridPower > 1 ? "Importing" : "Standby";
+  const batteryDirection = chargePower > 1 ? "Charging" : dischargePower > 1 ? "Discharging" : "Idle";
+  const panelColumns = Math.min(6, Math.ceil(Math.sqrt(panelCount * 1.35)));
   const panelRows = Math.ceil(panelCount / panelColumns);
   const panelPoint = (column: number, row: number) => {
-    const origin = { x: 590, y: 154 };
-    const across = { x: 158, y: -93 };
-    const down = { x: 152, y: 88 };
+    const origin = { x: 318, y: 220 };
+    const across = { x: 286, y: -39 };
+    const down = { x: 78, y: 88 };
     return `${origin.x + across.x * column + down.x * row},${origin.y + across.y * column + down.y * row}`;
   };
-
-  return <section className={`energy-flow panel ${isNight ? "night" : "day"}`} aria-label="Live energy flow">
+  return <section className="energy-flow panel" aria-label="Live energy flow">
     <div className="energy-flow-heading"><div><p className="eyebrow">Live energy flow</p><h2>Where your power is going</h2></div><label className="panel-count">Roof panels <input aria-label="Number of solar panels" type="number" min="1" max="24" value={panelCount} onChange={event => updatePanels(Number(event.target.value))} /></label></div>
-    <div className="energy-diagram"><svg viewBox="30 25 1110 575" role="img" aria-label="House energy system: solar panels, CEB utility, battery and home load">
-      <defs><filter id="glow"><feGaussianBlur stdDeviation="4" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter><linearGradient id="roof" x1="0" x2="1"><stop stopColor="#30586a"/><stop offset="1" stopColor="#1c3948"/></linearGradient><linearGradient id="wall" x1="0" x2="1"><stop stopColor="#b4d1cf"/><stop offset="1" stopColor="#dce9df"/></linearGradient></defs>
-      <g className="sky-object" transform={`translate(${skyX} ${skyY})`}>{isNight ? <><circle r="18" className="moon" /><circle cx="8" cy="-6" r="18" className="moon-cut" /></> : <><circle r="12" className="sun" />{Array.from({ length: 8 }, (_, i) => <line key={i} x1="0" y1="-20" x2="0" y2="-28" transform={`rotate(${i * 45})`} />)}</>}</g>
-      <g className="external-wires"><path className="wire-underlay" d={gridLine} /><path className={`wire grid-wire ${gridActive ? "active" : ""} ${gridPower < 0 ? "reverse" : ""}`} d={gridLine} /></g>
-      <g className="source-label grid-label"><text x="56" y="488">CEB UTILITY</text><text className="source-reading" x="56" y="510">{gridVoltage ? <><tspan className="data-value">{gridVoltage.toFixed(0)} V</tspan><tspan> · </tspan><tspan className={gridActive ? "data-value" : "state-value"}>{gridActive ? watts(Math.abs(gridPower)) : "Standby"}</tspan></> : <tspan className="state-value">Unavailable</tspan>}</text></g><g className="source-label battery-label"><text x="515" y="523">BATTERY</text><text className="source-reading" x="515" y="545"><tspan className="data-value">{values.battery_capacity_percent ?? "—"}%</tspan><tspan> · </tspan><tspan className={batteryActive ? "data-value" : "state-value"}>{batteryActive ? watts(Math.abs(batteryPower)) : "Idle"}</tspan></text></g>
-      <g className="grid-asset" transform="translate(90 372)"><path d="M 0 84 H 85 M 23 0 V 84 M 61 0 V 84 M 12 24 H 72 M 12 49 H 72" /><circle cx="23" cy="0" r="4"/><circle cx="61" cy="0" r="4"/></g>
-      <g className="house"><path className="house-shadow" d="M 432 508 H 1090"/><path className="house-wall" d="M 460 245 L 750 90 L 1055 250 V 508 H 460 Z"/><path className="house-roof" d="M 424 254 L 748 54 L 1090 250 L 1057 276 L 750 122 L 454 277 Z"/><g className="roof-panel-array"><path className="roof-panels" d="M 590 154 L 748 61 L 900 149 L 742 242 Z"/>{Array.from({ length: panelCount }, (_, index) => {
+    <div className="energy-diagram"><svg viewBox="0 0 1460 760" role="img" aria-label="House energy system with solar, inverter, battery, load and grid telemetry">
+      <defs><filter id="card-shadow" x="-30%" y="-40%" width="160%" height="190%"><feDropShadow dx="0" dy="14" stdDeviation="17" floodColor="#1b2935" floodOpacity=".14"/></filter><linearGradient id="roofFace" x1="0" x2="1"><stop stopColor="#dce2e8"/><stop offset="1" stopColor="#bfc9d4"/></linearGradient><linearGradient id="wallFace" x1="0" x2="1"><stop stopColor="#ffffff"/><stop offset="1" stopColor="#eef2f6"/></linearGradient><linearGradient id="ground" x1="0" x2="1"><stop stopColor="#f7f9fb"/><stop offset="1" stopColor="#e8edf2"/></linearGradient></defs>
+      <rect className="diagram-canvas" width="1460" height="760"/>
+      <ellipse className="diagram-glow" cx="520" cy="438" rx="520" ry="235"/>
+      <g className="site-base"><path d="M 78 585 L 427 438 L 833 545 L 502 705 Z"/><path d="M 78 585 V 610 L 502 730 V 705 Z"/><path d="M 502 705 L 833 545 V 570 L 502 730 Z"/></g>
+      <g className="house-illustration">
+        <path className="house-side" d="M 366 313 L 668 275 L 668 526 L 366 594 Z"/>
+        <path className="house-front" d="M 149 334 L 366 313 V 594 L 149 531 Z"/>
+        <path className="house-gable" d="M 149 334 L 263 196 L 366 313 Z"/>
+        <path className="house-roof-main" d="M 263 196 L 623 147 L 720 264 L 366 313 Z"/>
+        <path className="house-roof-left" d="M 108 330 L 263 196 L 366 313 L 149 334 Z"/>
+        <path className="roof-panels" d="M 318 220 L 604 181 L 682 269 L 396 308 Z"/>
+        <g className="roof-panel-array">{Array.from({ length: panelCount }, (_, index) => {
           const column = index % panelColumns;
           const row = Math.floor(index / panelColumns);
           const gapX = 0.012;
@@ -112,13 +107,35 @@ function EnergyFlow({ values, connected }: { values: StatusValues; connected: bo
           const top = row / panelRows + gapY;
           const bottom = (row + 1) / panelRows - gapY;
           return <polygon key={index} className="roof-panel-cell" points={`${panelPoint(left, top)} ${panelPoint(right, top)} ${panelPoint(right, bottom)} ${panelPoint(left, bottom)}`} />;
-        })}<path className="roof-panel-grid" d={`M ${panelPoint(.5, 0)} L ${panelPoint(.5, 1)} M ${panelPoint(0, .5)} L ${panelPoint(1, .5)}`} /></g><path className="house-trim" d="M 460 245 L 750 90 L 1055 250 M 750 90 V 508"/><rect className="door" x="862" y="372" width="78" height="136" rx="3"/><rect className="window" x="650" y="330" width="62" height="58" rx="3"/><path className="window-lines" d="M 681 330 V 388 M 650 359 H 712"/><rect className="window" x="964" y="330" width="48" height="52" rx="3"/><path className="window-lines" d="M 988 330 V 382 M 964 356 H 1012"/>
-        <g className="house-wires"><path className="wire-underlay" d={solarLine} /><path className={`wire solar-wire ${solarActive ? "active" : ""}`} d={solarLine} /><path className="wire-underlay" d="M 460 370 H 522" /><path className={`wire grid-wire ${gridActive ? "active" : ""} ${gridPower < 0 ? "reverse" : ""}`} d="M 460 370 H 522" /><path className="wire-underlay" d={batteryLine} /><path className={`wire battery-wire ${batteryActive ? "active" : ""} ${batteryPower < 0 ? "reverse" : ""}`} d={batteryLine} /><path className="wire-underlay" d={loadLine} /><path className={`wire load-wire ${loadActive ? "active" : ""}`} d={loadLine} /></g>
-        <g className="wire-nodes"><circle className="solar-node" cx="744" cy="242" r="5"/><circle className="solar-node" cx="610" cy="370" r="5"/><circle className="grid-node" cx="460" cy="370" r="5"/><circle className="battery-node" cx="566" cy="430" r="5"/><circle className="load-node" cx="705" cy="418" r="5"/><circle className="load-node" cx="840" cy="418" r="5"/></g>
-        <g className="wall-inverter" transform="translate(522 332)"><rect width="88" height="75" rx="8"/><circle cx="44" cy="30" r="15"/><path d="M 44 18 L 35 35 H 46 L 41 45 L 54 27 H 44 Z"/><text x="44" y="63">INVERTER</text></g><g className="battery-asset" transform="translate(515 430)"><rect width="102" height="38" rx="6"/><rect className="battery-level" width={Math.max(3, batteryPercent * .9)} height="26" x="5" y="6" rx="2"/><path d="M 103 11 H 110 V 27 H 103" /></g><g className="metric-panel battery-metrics" transform="translate(332 445)"><rect width="164" height="82" rx="7"/><text x="12" y="24"><tspan>Voltage </tspan><tspan className="metric-value">{display(values.battery_voltage, " V")}</tspan></text><text x="12" y="45"><tspan>Charge </tspan><tspan className="metric-value">{display(values.battery_charge_current, " A", 0)}</tspan></text><text x="12" y="66"><tspan>Discharge </tspan><tspan className="metric-value">{display(values.battery_discharge_current, " A", 0)}</tspan></text></g><text className="home-title" x="805" y="514">HOME USAGE</text><text className="home-value" x="805" y="538">{loadPower > 1 ? watts(loadPower) : "No load data"}</text><g className="metric-panel load-metrics" transform="translate(730 548)"><rect width="152" height="46" rx="7"/><text x="12" y="28"><tspan>Load </tspan><tspan className="metric-value">{display(values.load_percent, "%", 0)}</tspan></text></g></g>
-      <g className="metric-panel solar-metrics" transform="translate(790 250)"><rect width="180" height="82" rx="7"/><text className="metric-title" x="12" y="20">PV INPUT</text><text x="12" y="43"><tspan>Voltage </tspan><tspan className="metric-value">{display(values.pv_input_voltage, " V")}</tspan></text><text x="12" y="63"><tspan>Current </tspan><tspan className="metric-value">{display(values.pv_input_current, " A")}</tspan></text></g>
-      <g className="metric-panel grid-metrics" transform="translate(124 514)"><rect width="168" height="64" rx="7"/><text x="12" y="24"><tspan>Freq </tspan><tspan className="metric-value">{display(values.grid_frequency, " Hz")}</tspan></text><text x="12" y="45"><tspan>Flow </tspan><tspan className="metric-value">{gridActive ? watts(Math.abs(gridPower)) : "0 W"}</tspan></text></g>
-      <g className="wire-label"><g className="wire-tag" transform="translate(634 300)"><rect x="-66" y="-16" width="132" height="28" rx="5"/><text>{solarActive ? `${watts(pvPower)} solar` : "Solar standby"}</text></g><g className="wire-tag" transform="translate(302 432)"><rect x="-76" y="-16" width="152" height="28" rx="5"/><text>{gridActive ? `${gridPower < 0 ? "Exporting" : "Importing"} ${watts(Math.abs(gridPower))}` : "Grid standby"}</text></g></g>
+        })}</g>
+        <rect className="window" x="205" y="382" width="82" height="70" rx="2"/><path className="window-line" d="M 246 384 V 450 M 206 419 H 285"/>
+        <rect className="window small" x="421" y="375" width="52" height="42" rx="2"/><path className="window-line" d="M 447 376 V 417 M 422 397 H 472"/>
+        <path className="garage" d="M 690 404 L 812 378 V 515 L 690 548 Z"/><path className="garage-lines" d="M 704 425 L 799 405 M 704 449 L 799 429 M 704 473 L 799 453 M 704 497 L 799 477"/>
+        <path className="door" d="M 326 470 L 396 455 V 580 L 326 598 Z"/>
+        <g className="inverter" transform="translate(520 342)"><text x="33" y="-18">Inverter</text><rect width="72" height="92" rx="9"/><circle cx="36" cy="25" r="8"/><path d="M 36 15 L 28 29 H 38 L 34 42 L 47 22 H 37 Z"/><rect x="24" y="62" width="30" height="14" rx="3"/></g>
+        <g className="battery-device" transform="translate(505 500)"><rect width="84" height="112" rx="10"/><rect x="30" y="46" width="25" height="40" rx="3"/><rect x="36" y="38" width="13" height="8" rx="2"/><rect className="battery-fill" x="35" y={82 - batteryPercent * .32} width="15" height={Math.max(3, batteryPercent * .32)} rx="1"/></g>
+      </g>
+      <g className="grid-tower" transform="translate(930 470)"><path d="M 50 0 L 10 165 M 50 0 L 90 165 M 25 105 H 75 M 17 137 H 83 M 34 60 H 66 M 30 31 H 70 M 50 0 V 165 M 16 48 H 84 M 0 72 H 100" /></g>
+      <g className="flow-paths">
+        <path className="flow-path muted" d="M 205 164 V 198 Q 205 220 227 220 H 318"/>
+        <path className={`flow-path ${solarActive ? "active" : ""}`} d="M 492 294 L 532 326 Q 548 342 556 342"/>
+        <path className={`flow-path ${loadActive ? "active" : ""}`} d="M 592 386 H 756 Q 784 386 784 316 H 811"/>
+        <path className={`flow-path ${batteryActive ? "active" : ""} ${batteryPower < 0 ? "reverse" : ""}`} d="M 556 434 V 466 Q 556 492 547 500"/>
+        <path className={`flow-path ${gridActive ? "active" : ""} ${gridPower < 0 ? "reverse" : ""}`} d="M 592 416 H 760 Q 792 416 792 470 H 948 Q 980 470 980 502 V 530"/>
+      </g>
+      <g className="flow-nodes"><circle cx="318" cy="220" r="6"/><circle cx="492" cy="294" r="6"/><circle cx="556" cy="342" r="7"/><circle cx="592" cy="386" r="7"/><circle cx="811" cy="316" r="6"/><circle cx="556" cy="434" r="7"/><circle cx="547" cy="500" r="6"/><circle cx="792" cy="470" r="7"/><circle cx="980" cy="530" r="6"/></g>
+      <g className="callout-card pv-card" transform="translate(116 62)"><rect width="178" height="102" rx="12"/><g className="sun-icon" transform="translate(36 42)"><circle r="11"/>{Array.from({ length: 8 }, (_, i) => <line key={i} y1="-20" y2="-28" transform={`rotate(${i * 45})`} />)}</g><text className="card-title" x="74" y="36">PV</text><text className="card-value" x="74" y="72">{pvPower > 1 ? watts(pvPower) : "0 W"}</text><text className="card-detail" x="74" y="94">{display(values.pv_input_voltage, " V")} / {display(values.pv_input_current, " A")}</text></g>
+      <g className="callout-card load-card" transform="translate(811 267)"><rect width="176" height="98" rx="12"/><path className="line-icon" d="M 27 51 V 27 L 50 8 L 73 27 V 51 H 58 V 34 H 42 V 51 Z"/><text className="card-title" x="86" y="38">Load</text><text className="card-value" x="86" y="74">{loadPower > 1 ? watts(loadPower) : "0 W"}</text><text className="card-detail" x="86" y="94">{display(values.load_percent, "%", 0)} · {display(values.output_voltage, " V")}</text></g>
+      <g className="callout-card battery-card" transform="translate(442 638)"><rect width="190" height="96" rx="12"/><path className="soft-icon" d="M 25 18 H 48 V 62 H 25 Z M 31 12 H 42 V 18 M 31 44 H 42 M 31 53 H 42"/><text className="card-title" x="77" y="33">Battery</text><text className="card-value" x="77" y="68">{batteryActive ? watts(Math.abs(batteryPower)) : "0 W"}</text><text className="card-detail accent" x="77" y="89">{batteryPercent.toFixed(0)}% · {batteryDirection}</text></g>
+      <g className="callout-card grid-card" transform="translate(777 638)"><rect width="180" height="96" rx="12"/><path className="soft-icon tower" d="M 40 14 L 20 70 M 40 14 L 60 70 M 28 50 H 52 M 24 62 H 56 M 32 32 H 48 M 40 14 V 70"/><text className="card-title" x="78" y="33">Grid</text><text className="card-value" x="78" y="68">{gridActive ? watts(Math.abs(gridPower)) : "0 W"}</text><text className="card-detail accent" x="78" y="89">{gridDirection}</text></g>
+      <g className="overview-card" transform="translate(1074 69)"><rect width="332" height="626" rx="20"/><text className="overview-title" x="36" y="58">Overview</text><circle className={connected ? "live-dot on" : "live-dot"} cx="278" cy="52" r="5"/><text className="live-label" x="292" y="58">{connected ? "Live" : "Offline"}</text>
+        <g className="overview-row" transform="translate(26 92)"><rect width="280" height="82" rx="10"/><path className="line-icon" d="M 24 49 V 24 H 62 V 49 M 33 18 V 30 M 53 18 V 30 M 31 35 H 37 M 43 35 H 49 M 55 35 H 61 M 31 44 H 37 M 43 44 H 49 M 55 44 H 61"/><text className="row-label" x="96" y="34">PV Input</text><text className="row-value compact" x="96" y="66">{display(values.pv_input_voltage, " V")} · {display(values.pv_input_current, " A")}</text></g>
+        <g className="overview-row" transform="translate(26 174)"><rect width="280" height="82"/><path className="line-icon" d="M 33 18 H 52 V 59 H 33 Z M 38 12 H 47 V 18 M 39 43 H 46"/><text className="row-label" x="96" y="31">Battery SOC</text><text className="row-value" x="96" y="60">{batteryPercent.toFixed(0)}%</text><rect className="soc-track" x="96" y="68" width="160" height="6" rx="3"/><rect className="soc-fill" x="96" y="68" width={Math.max(3, batteryPercent * 1.6)} height="6" rx="3"/></g>
+        <g className="overview-row" transform="translate(26 256)"><rect width="280" height="82"/><path className="line-icon" d="M 24 52 V 28 L 44 12 L 64 28 V 52 H 52 V 36 H 36 V 52 Z"/><text className="row-label" x="96" y="32">Home Load</text><text className="row-value" x="96" y="64">{loadPower > 1 ? watts(loadPower) : "0 W"}</text></g>
+        <g className="overview-row" transform="translate(26 338)"><rect width="280" height="82"/><path className="line-icon" d="M 44 14 L 24 62 M 44 14 L 64 62 M 31 48 H 57 M 28 59 H 60 M 36 31 H 52 M 44 14 V 62"/><text className="row-label" x="96" y="28">Grid</text><text className="row-value" x="96" y="58">{gridActive ? watts(Math.abs(gridPower)) : "0 W"}</text><text className="row-note" x="96" y="76">{gridDirection} · {display(values.grid_voltage, " V", 0)} · {display(values.grid_frequency, " Hz")}</text></g>
+        <g className="overview-row" transform="translate(26 420)"><rect width="280" height="82"/><path className="line-icon" d="M 25 48 H 36 L 43 24 L 51 64 L 59 39 H 69"/><text className="row-label" x="96" y="28">Battery Current</text><text className="row-value compact" x="96" y="58">{display(values.battery_charge_current, " A", 0)} / {display(values.battery_discharge_current, " A", 0)}</text><text className="row-note" x="96" y="76">charge / discharge</text></g>
+        <g className="overview-row" transform="translate(26 502)"><rect width="280" height="82" rx="10"/><path className="line-icon" d="M 44 18 V 52 M 35 27 H 53 M 35 43 H 53 M 30 60 H 58"/><text className="row-label" x="96" y="32">Inverter Temp</text><text className="row-value" x="96" y="64">{display(values.inverter_temperature_c, "°C")}</text></g>
+      </g>
     </svg></div>
     <div className="flow-legend"><span><i className="legend-dot solar" />Solar production</span><span><i className="legend-dot battery" />Battery storage</span><span><i className="legend-dot grid" />CEB utility</span><span>Live values update automatically</span></div>
   </section>;
