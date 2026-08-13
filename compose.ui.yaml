@@ -6,7 +6,7 @@ services:
     build: ./frontend
     restart: unless-stopped
     environment:
-      API_UPSTREAM: ${PI_API_UPSTREAM:-api:8000}
+      API_UPSTREAM: ${PI_API_UPSTREAM:-sako.knnect.lk:8000}
     ports:
       - "127.0.0.1:8080:80"
     security_opt:
