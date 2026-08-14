@@ -509,7 +509,7 @@ function EnergyFlow({ values, connected }: { values: StatusValues; connected: bo
       <div className="energy-stage">
         <img className="energy-bg" src={energySystemBackground} alt="" aria-hidden="true" />
         <svg className="energy-lines" viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">
-          <path className="flow-path muted" d="M 13 11.8 V 17.8 Q 13 20 15.2 20 H 25.5" />
+          <path className={`flow-path ${solarActive ? "active" : "muted"}`} d="M 13 11.8 V 17.8 Q 13 20 15.2 20 H 25.5" />
           <path className={`flow-path ${solarActive ? "active" : ""}`} d="M 31 19.3 C 35 24 38.5 28.8 41.2 35.2" />
           <path className={`flow-path ${loadActive ? "active" : ""}`} d="M 42 35.2 H 50.5 Q 55 35.2 55 31.6 H 58.4" />
           <path className={`flow-path battery-flow ${batteryCharging ? "active charging" : ""} ${batteryDischarging ? "active discharging reverse" : ""}`} d="M 41.2 35.2 V 44.2" />

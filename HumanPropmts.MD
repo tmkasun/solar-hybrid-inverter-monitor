@@ -22,3 +22,8 @@
 -----
 
 - Add routing to the app. Should have a route to each individual page and query parameters to show specific data. For example, a route to the data analysis page with query parameters for parameter type and date range.
+
+
+-------
+
+- I'm using JK BMS with my battery pack of 28V (8 x 120AH prismetic batteries). I support communication over bluetooth and has inbuild bluetooth module. My Raspbery pi 3 B+ also has bluetooth module and i could connect to the BMS using bluetooth. I previously used this https://github.com/tmkasun/solar-hybrid-inverter-monitor/blob/main/inverter-api/run.jkbms.sh jkbms tool to read the data from the BMS. I want to read data from the BMS and integrate it to the app. If you want we could first write some cli tools or commands to check the possible implementation plan and then we could do the implementation.
