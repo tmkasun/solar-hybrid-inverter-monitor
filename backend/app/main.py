@@ -188,12 +188,14 @@ class State:
             await asyncio.sleep(settings.poll_seconds)
 
     async def bms_poll_loop(self) -> None:
+        loop = asyncio.get_running_loop()
         while True:
+            started_at = loop.time()
             try:
                 await self.poll_bms()
             except Exception:
                 logger.exception("BMS poll loop iteration failed; polling will continue")
-            await asyncio.sleep(settings.bms_poll_seconds)
+            await asyncio.sleep(next_poll_delay(settings.bms_poll_seconds, started_at, loop.time()))
 
     def should_store_sample(self, captured_at: datetime) -> bool:
         return (
@@ -280,6 +282,10 @@ def utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def next_poll_delay(interval_seconds: float, started_at: float, finished_at: float) -> float:
+    return max(0.0, interval_seconds - (finished_at - started_at))
 
 
 @app.get("/api/health")

@@ -193,3 +193,8 @@ def test_database_sample_interval_is_independent_from_live_poll(monkeypatch):
     state_stub.last_stored_sample_at = captured_at
     assert main_module.State.should_store_sample(state_stub, captured_at.replace(second=14)) is False
     assert main_module.State.should_store_sample(state_stub, captured_at.replace(second=15)) is True
+
+
+def test_bms_poll_loop_schedules_from_poll_start_time():
+    assert main_module.next_poll_delay(40, started_at=100, finished_at=105) == 35
+    assert main_module.next_poll_delay(40, started_at=100, finished_at=145) == 0
