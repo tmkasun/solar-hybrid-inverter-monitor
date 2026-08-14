@@ -586,8 +586,8 @@ function BmsCellHealth({ bms }: { bms?: BmsStatus | null }) {
   const cells = bms.cells || [];
   const minVoltage = cells.length ? Math.min(...cells.map(cell => cell.voltage)) : null;
   const maxVoltage = cells.length ? Math.max(...cells.map(cell => cell.voltage)) : null;
-  return <article className={`panel bms-health ${bms.connected ? "online" : "offline"}`}>
-    <div className="bms-health-head"><div><h3>JK-BMS cells</h3><p>{bms.name || bms.address || "Bluetooth BMS"} · {bms.protocol || "JK"}</p></div><span className={bms.connected ? "live on" : "live"}>{bms.connected ? "Live" : "Offline"}</span></div>
+  return <article className={`panel bms-health ${bms.connected ? "online" : "offline"} ${bms.stale ? "stale" : ""}`}>
+    <div className="bms-health-head"><div><h3>JK-BMS cells</h3><p>{bms.name || bms.address || "Bluetooth BMS"} · {bms.protocol || "JK"}</p></div><span className={bms.connected && !bms.stale ? "live on" : "live"}>{bms.stale ? "Stale" : bms.connected ? "Live" : "Offline"}</span></div>
     <div className="bms-health-stats">
       <BmsStat label="Pack" value={display(bms.voltage, " V", 2)} />
       <BmsStat label="SOC" value={display(bms.capacity_percent, "%", 0)} />
@@ -596,6 +596,7 @@ function BmsCellHealth({ bms }: { bms?: BmsStatus | null }) {
       <BmsStat label="Temp" value={display(bms.mos_temperature_c ?? bms.battery_t1_c, "°C", 1)} />
     </div>
     {bms.error && <p className="error">{bms.error}</p>}
+    {!bms.error && bms.stale && <p className="bms-note">Last BMS poll failed; showing the last successful reading.</p>}
     {cells.length === 0 ? <p>No cell voltage data is available yet.</p> : <div className="bms-cell-grid">{cells.map(cell => {
       const fill = cellVoltageFill(cell.voltage);
       const edge = cell.voltage === minVoltage ? "low" : cell.voltage === maxVoltage ? "high" : "";
@@ -613,7 +614,7 @@ function cellVoltageFill(value: number) {
 }
 
 function batterySourceLabel(value: number | string | null | undefined, bms?: BmsStatus | null) {
-  if (value === "bms") return "JK-BMS Bluetooth";
+  if (value === "bms") return bms?.stale ? "JK-BMS Bluetooth (last good)" : "JK-BMS Bluetooth";
   if (bms?.enabled && bms.error) return "Inverter fallback";
   return "Inverter";
 }
@@ -855,12 +856,13 @@ function DiagnosticsPanel({ title, rows }: { title: string; rows: Array<[string,
 
 function bmsLabel(bms: BmsStatus | null) {
   if (!bms?.enabled) return "Disabled";
+  if (bms.stale) return "Stale";
   return bms.connected ? "Connected" : "Offline";
 }
 
 function bmsDetail(bms: BmsStatus | null) {
   if (!bms?.enabled) return "BMS polling is disabled";
-  return bms.error || `${bms.address || "No address"} · ${formatDate(bms.captured_at)}`;
+  return bms.error || bms.last_error || `${bms.address || "No address"} · ${formatDate(bms.captured_at)}`;
 }
 
 function bmsRows(bms: BmsStatus | null): Array<[string, string]> {
@@ -873,6 +875,8 @@ function bmsRows(bms: BmsStatus | null): Array<[string, string]> {
     ["Name", bms?.name || "—"],
     ["Protocol", bms?.protocol || "—"],
     ["Last update", formatDate(bms?.captured_at)],
+    ["Last poll error", bms?.last_error || "—"],
+    ["Last error time", formatDate(bms?.last_error_at)],
     ["Pack voltage", display(bms?.voltage, " V", 2)],
     ["Current", display(bms?.current_a, " A", 2)],
     ["SOC", display(bms?.capacity_percent, "%", 0)],

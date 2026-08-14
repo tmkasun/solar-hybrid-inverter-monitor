@@ -7,7 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.main as main_module
-from app.bms import BmsCell, BmsStatus
+from app.bms import BmsCell, BmsError, BmsStatus
 from app.main import app, state
 from app.storage import Storage
 
@@ -108,6 +108,61 @@ async def test_status_uses_fresh_bms_battery_values_and_keeps_inverter_values():
         assert payload["status"]["inverter_battery_voltage"] == 25.1
         assert payload["bms"]["connected"] is True
     finally:
+        state.latest_bms = previous_bms
+        await state.update_latest(previous_inverter)
+
+
+@pytest.mark.asyncio
+async def test_bms_poll_failure_keeps_last_good_bms_reading(monkeypatch):
+    class FailingBms:
+        async def status(self):
+            raise BmsError("jkbms getCellData timed out after 25s")
+
+    previous_inverter = state.latest_inverter
+    previous_bms = state.latest_bms
+    previous_driver = state.bms
+    monkeypatch.setattr(main_module, "settings", SimpleNamespace(
+        bms_mode="jkbms",
+        bms_bluetooth_address="AA:BB:CC:DD:EE:FF",
+        bms_name="JK-BMS",
+        bms_protocol="JK02",
+        bms_poll_seconds=30,
+        bms_timeout_seconds=25,
+        poll_seconds=5,
+    ))
+    try:
+        state.bms = FailingBms()
+        state.latest_bms = BmsStatus(
+            enabled=True,
+            connected=True,
+            source="mppsolar",
+            address="AA:BB:CC:DD:EE:FF",
+            protocol="JK02",
+            captured_at=datetime.now(timezone.utc).isoformat(),
+            voltage=26.1,
+            current_a=2.0,
+            capacity_percent=15,
+            cells=[BmsCell(1, 3.25)],
+        )
+        await state.update_latest({
+            "connected": True,
+            "mode": "L",
+            "status": {"battery_voltage": 25.1, "battery_capacity_percent": 66},
+            "warnings": None,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "error": None,
+        })
+
+        bms = await state.poll_bms()
+
+        assert bms.connected is True
+        assert bms.stale is True
+        assert bms.error is None
+        assert bms.last_error == "jkbms getCellData timed out after 25s"
+        assert state.latest["status"]["battery_source"] == "bms"
+        assert state.latest["status"]["battery_voltage"] == 26.1
+    finally:
+        state.bms = previous_driver
         state.latest_bms = previous_bms
         await state.update_latest(previous_inverter)
 

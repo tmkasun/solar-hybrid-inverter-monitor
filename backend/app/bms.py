@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -44,6 +44,9 @@ class BmsStatus:
     protocol: str | None = None
     captured_at: str | None = None
     error: str | None = None
+    stale: bool = False
+    last_error: str | None = None
+    last_error_at: str | None = None
     cell_count: int | None = None
     cells: list[BmsCell] = field(default_factory=list)
     min_cell_voltage: float | None = None
@@ -79,7 +82,12 @@ class BmsStatus:
             protocol=protocol or None,
             captured_at=utc_now(),
             error=error,
+            last_error=error,
+            last_error_at=utc_now(),
         )
+
+    def with_poll_error(self, error: str) -> "BmsStatus":
+        return replace(self, stale=True, error=None, last_error=error, last_error_at=utc_now())
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

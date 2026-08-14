@@ -12,6 +12,9 @@ export type BmsStatus = {
   protocol?: string | null;
   captured_at?: string | null;
   error?: string | null;
+  stale?: boolean;
+  last_error?: string | null;
+  last_error_at?: string | null;
   cell_count?: number | null;
   cells: BmsCell[];
   min_cell_voltage?: number | null;
