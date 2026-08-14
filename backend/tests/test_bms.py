@@ -1,6 +1,8 @@
 import json
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +14,7 @@ from app.bms import (
     apply_bms_to_status,
     normalize_mppsolar_status,
     parse_json_output,
+    scan_bluetooth_devices,
 )
 
 
@@ -74,6 +77,24 @@ def test_normalizer_allows_missing_optional_fields():
     assert status.current_a is None
 
 
+def test_normalizer_prefers_computed_power_over_raw_jkbms_power_field():
+    status = normalize_mppsolar_status(
+        {
+            "voltage_cell01": [3.252, "V"],
+            "voltage_cell02": [3.255, "V"],
+            "battery_voltage": [26.028, "V"],
+            "current_charge": [2.052, "A"],
+            "current_discharge": [0, "A"],
+            "battery_power": [42633, "W"],
+            "percent_remain": [15, "%"],
+        },
+        cell_count=2,
+    )
+
+    assert status.current_a == 2.052
+    assert status.power_w == 53.4
+
+
 def test_parse_json_output_reports_invalid_json():
     with pytest.raises(BmsError, match="did not return JSON"):
         parse_json_output("not json")
@@ -96,6 +117,21 @@ def test_jkbms_command_normalizes_json_stdout():
     bms = JkbmsCliBms("AA:BB:CC:DD:EE:FF", cell_count=8, command="jkbms", runner=runner)
 
     assert bms._read_status().capacity_percent == 78
+
+
+def test_jkbms_status_retries_incomplete_json_output():
+    attempts = []
+
+    def runner(*args, **kwargs):
+        attempts.append(args[0])
+        if len(attempts) == 1:
+            return subprocess.CompletedProcess(args[0], 0, json.dumps({"getCellData": {"_command": ["getCellData", ""]}}), "")
+        return subprocess.CompletedProcess(args[0], 0, json.dumps(sample_mppsolar_payload()), "")
+
+    bms = JkbmsCliBms("AA:BB:CC:DD:EE:FF", cell_count=8, command="jkbms", retries=1, retry_delay_seconds=0, runner=runner)
+
+    assert bms._read_status().capacity_percent == 78
+    assert len(attempts) == 2
 
 
 def test_bms_status_overrides_fresh_battery_values_and_preserves_inverter_values():
@@ -131,3 +167,26 @@ def test_stale_bms_status_keeps_inverter_battery_values():
     assert merged["battery_source"] == "inverter"
     assert merged["battery_voltage"] == 25.4
     assert "inverter_battery_voltage" not in merged
+
+
+@pytest.mark.asyncio
+async def test_scan_uses_advertisement_rssi_without_touching_deprecated_device_rssi(monkeypatch):
+    class Device:
+        address = "AA:BB:CC:DD:EE:FF"
+        name = None
+
+        @property
+        def rssi(self):
+            raise AssertionError("deprecated BLEDevice.rssi should not be accessed")
+
+    class FakeScanner:
+        @staticmethod
+        async def discover(*, timeout, return_adv=False):
+            assert timeout == 2
+            assert return_adv is True
+            advertisement = SimpleNamespace(rssi=-51, local_name="JK-BMS")
+            return {"AA:BB:CC:DD:EE:FF": (Device(), advertisement)}
+
+    monkeypatch.setitem(sys.modules, "bleak", SimpleNamespace(BleakScanner=FakeScanner))
+
+    assert await scan_bluetooth_devices(2) == [{"address": "AA:BB:CC:DD:EE:FF", "name": "JK-BMS", "rssi": -51}]

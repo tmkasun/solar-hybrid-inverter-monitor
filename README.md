@@ -81,6 +81,8 @@ BMS_PROTOCOL=JK02
 BMS_CELL_COUNT=8
 BMS_POLL_SECONDS=30
 BMS_TIMEOUT_SECONDS=25
+BMS_RETRIES=2
+BMS_RETRY_DELAY_SECONDS=2
 ```
 
 Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.

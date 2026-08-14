@@ -58,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_bms_args(info)
     info.add_argument("--json", action="store_true", help="print JSON")
 
+    raw = subcommands.add_parser("raw", help="print raw jkbms JSON without normalization")
+    add_bms_args(raw)
+    raw.add_argument("--bms-command", default="getCellData", help="jkbms command to run (default: getCellData)")
+
     monitor = subcommands.add_parser("monitor", help="continuously print BMS status")
     add_bms_args(monitor)
     monitor.add_argument("--interval", type=float, default=settings.bms_poll_seconds, help="seconds between readings")
@@ -72,6 +76,8 @@ def add_bms_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--protocol", default=settings.bms_protocol, help="JK-BMS protocol (default: JK02)")
     parser.add_argument("--cell-count", type=int, default=settings.bms_cell_count, help="expected cell count")
     parser.add_argument("--timeout", type=float, default=settings.bms_timeout_seconds, help="command timeout seconds")
+    parser.add_argument("--retries", type=int, default=settings.bms_retries, help="retry failed reads this many times")
+    parser.add_argument("--retry-delay", type=float, default=settings.bms_retry_delay_seconds, help="seconds between retry attempts")
     parser.add_argument("--command", default=settings.bms_jkbms_command, help="path to the jkbms executable")
 
 
@@ -91,11 +97,14 @@ async def execute(args: argparse.Namespace) -> int:
         if args.count is not None and args.count <= 0:
             raise BmsError("--count must be greater than zero")
 
-    bms = JkbmsCliBms(args.address, args.name, args.protocol, args.cell_count, args.timeout, args.command)
+    bms = JkbmsCliBms(args.address, args.name, args.protocol, args.cell_count, args.timeout, args.command, args.retries, args.retry_delay)
     try:
         if args.operation == "info":
             info = await bms.info()
             _print_json(info) if args.json else print(json.dumps(info, indent=2, sort_keys=True, default=str))
+            return 0
+        if args.operation == "raw":
+            _print_json(await bms.raw(args.bms_command))
             return 0
         readings = 0
         while args.operation == "monitor" and (args.count is None or readings < args.count):

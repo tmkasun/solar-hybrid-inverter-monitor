@@ -32,3 +32,21 @@ def test_bms_cli_status_json(monkeypatch, capsys):
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["connected"] is True
     assert snapshot["cells"][0]["index"] == 1
+
+
+def test_bms_cli_raw_prints_unmodified_json(monkeypatch, capsys):
+    class FakeBms:
+        def __init__(self, *args):
+            self.args = args
+
+        async def raw(self, command):
+            assert command == "getCellData"
+            return {"getCellData": {"_command": ["getCellData", ""], "note": "raw"}}
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(bms_cli, "JkbmsCliBms", FakeBms)
+
+    assert bms_cli.main(["raw", "--address", "AA:BB"]) == 0
+    assert json.loads(capsys.readouterr().out)["getCellData"]["note"] == "raw"

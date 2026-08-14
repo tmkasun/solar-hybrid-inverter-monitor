@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,13 +141,16 @@ class SimulatorBms(BaseBms):
 
 class JkbmsCliBms(BaseBms):
     def __init__(self, address: str, name: str = "", protocol: str = "JK02", cell_count: int = 8,
-                 timeout_seconds: float = 25, command: str = "", runner: Runner = subprocess.run):
+                 timeout_seconds: float = 25, command: str = "", retries: int = 1,
+                 retry_delay_seconds: float = 2, runner: Runner = subprocess.run):
         self.address = address.strip()
         self.name = name.strip()
         self.protocol = protocol.strip() or "JK02"
         self.cell_count = cell_count
         self.timeout_seconds = timeout_seconds
         self.command = command.strip() or default_jkbms_command()
+        self.retries = max(0, retries)
+        self.retry_delay_seconds = max(0, retry_delay_seconds)
         self.runner = runner
 
     async def status(self) -> BmsStatus:
@@ -157,15 +161,30 @@ class JkbmsCliBms(BaseBms):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._run_json_command, "getInfo")
 
+    async def raw(self, bms_command: str = "getCellData") -> dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._run_json_command, bms_command)
+
     def _read_status(self) -> BmsStatus:
-        data = self._run_json_command("getCellData")
-        return normalize_mppsolar_status(
-            data,
-            address=self.address,
-            name=self.name,
-            protocol=self.protocol,
-            cell_count=self.cell_count,
-        )
+        last_error: BmsError | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                data = self._run_json_command("getCellData")
+                return normalize_mppsolar_status(
+                    data,
+                    address=self.address,
+                    name=self.name,
+                    protocol=self.protocol,
+                    cell_count=self.cell_count,
+                )
+            except BmsError as exc:
+                last_error = exc
+                if attempt >= self.retries:
+                    break
+                logger.warning("JK-BMS read attempt %d/%d failed: %s", attempt + 1, self.retries + 1, exc)
+                time.sleep(self.retry_delay_seconds)
+        assert last_error is not None
+        raise last_error
 
     def _run_json_command(self, bms_command: str) -> dict[str, Any]:
         if not self.address:
@@ -209,6 +228,8 @@ def bms_from_settings(settings: Any) -> BaseBms:
             settings.bms_cell_count,
             settings.bms_timeout_seconds,
             settings.bms_jkbms_command,
+            settings.bms_retries,
+            settings.bms_retry_delay_seconds,
         )
     return DisabledBms()
 
@@ -218,11 +239,26 @@ async def scan_bluetooth_devices(timeout_seconds: float = 8) -> list[dict[str, A
         from bleak import BleakScanner
     except ModuleNotFoundError as exc:
         raise BmsError("bleak is not installed; run scripts/pi-api-install to install mppsolar[ble]") from exc
-    devices = await BleakScanner.discover(timeout=timeout_seconds)
+    try:
+        discovered = await BleakScanner.discover(timeout=timeout_seconds, return_adv=True)
+    except TypeError:
+        devices = await BleakScanner.discover(timeout=timeout_seconds)
+        return [_bluetooth_device_record(device, include_device_rssi=True) for device in devices]
     return [
-        {"address": device.address, "name": device.name or "", "rssi": getattr(device, "rssi", None)}
-        for device in devices
+        _bluetooth_device_record(device, advertisement)
+        for device, advertisement in discovered.values()
     ]
+
+
+def _bluetooth_device_record(device: Any, advertisement: Any | None = None, *, include_device_rssi: bool = False) -> dict[str, Any]:
+    rssi = getattr(advertisement, "rssi", None)
+    if rssi is None and include_device_rssi:
+        rssi = getattr(device, "rssi", None)
+    return {
+        "address": device.address,
+        "name": device.name or getattr(advertisement, "local_name", None) or "",
+        "rssi": rssi,
+    }
 
 
 def parse_json_output(output: str) -> dict[str, Any]:
@@ -257,9 +293,7 @@ def normalize_mppsolar_status(data: dict[str, Any], *, address: str = "", name: 
     if voltage is None and cells:
         voltage = sum(cell.voltage for cell in cells)
     current_a = _signed_current(payload)
-    power_w = _number(payload, "Battery_Power", "Power")
-    if power_w is None and voltage is not None and current_a is not None:
-        power_w = voltage * current_a
+    power_w = voltage * current_a if voltage is not None and current_a is not None else _number(payload, "Battery_Power", "Power")
 
     min_cell = _number(payload, "Minimum_Cell_Voltage", "Min_Cell_Voltage")
     max_cell = _number(payload, "Maximum_Cell_Voltage", "Max_Cell_Voltage")

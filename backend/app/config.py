@@ -25,6 +25,8 @@ class Settings:
     bms_cell_count: int = int(os.getenv("BMS_CELL_COUNT", "8"))
     bms_poll_seconds: float = float(os.getenv("BMS_POLL_SECONDS", "30"))
     bms_timeout_seconds: float = float(os.getenv("BMS_TIMEOUT_SECONDS", "25"))
+    bms_retries: int = int(os.getenv("BMS_RETRIES", "2"))
+    bms_retry_delay_seconds: float = float(os.getenv("BMS_RETRY_DELAY_SECONDS", "2"))
     bms_jkbms_command: str = os.getenv("BMS_JKBMS_COMMAND", "")
 
 
