@@ -18,5 +18,5 @@ export const api = {
   change: (key: string, value: string) => request(`/api/settings/${key}`, { method: "POST", body: JSON.stringify({ value, confirmation: `APPLY ${key}` }) }),
   audit: () => request<{ entries: Array<Record<string, string>> }>("/api/audit"),
   diagnostics: () => request<DiagnosticsResponse>("/api/diagnostics"),
-  refreshDiagnostics: () => request<{ diagnostics: Record<string, unknown> }>("/api/diagnostics/refresh", { method: "POST" })
+  refreshDiagnostics: () => request<DiagnosticsResponse>("/api/diagnostics/refresh", { method: "POST" })
 };

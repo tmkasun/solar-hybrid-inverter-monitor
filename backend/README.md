@@ -16,6 +16,13 @@ The installer creates `backend/.venv`, installs the Python dependencies,
 configures the USB udev rule, creates `/etc/sako-inverter/api.env` if it does
 not already exist, and enables the `sako-inverter-api` service.
 
+Install the build tools and Bluetooth/GLib packages used by the pinned BLE
+dependency before running the installer:
+
+```sh
+sudo apt update && sudo apt install -y python3-venv build-essential pkg-config libglib2.0-dev bluetooth bluez
+```
+
 Check the service with:
 
 ```sh
@@ -72,11 +79,21 @@ INVERTER_USB_PRODUCT_ID=0x5161
 ADMIN_PASSWORD_HASH='$2b$12$PASTE_THE_GENERATED_HASH_HERE'
 LOG_LEVEL=INFO
 LOG_FILE=/var/solar.log
+BMS_MODE=disabled
+BMS_BLUETOOTH_ADDRESS=
+BMS_NAME=
+BMS_PROTOCOL=JK02
+BMS_CELL_COUNT=8
+BMS_POLL_SECONDS=30
+BMS_TIMEOUT_SECONDS=25
 ```
 
 `INVERTER_POLL_SECONDS` controls live telemetry reads and WebSocket updates.
 `INVERTER_DB_SAMPLE_SECONDS` controls how often successful telemetry is saved
 to history.
+`BMS_MODE` can be `disabled`, `simulator`, or `jkbms`. For hardware BMS reads,
+first run `../scripts/bms-cli scan --json`, then verify with
+`../scripts/bms-cli status --address <address> --protocol JK02 --json`.
 
 For local development, the backend can run in simulator mode:
 

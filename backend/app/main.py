@@ -15,6 +15,7 @@ from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response, W
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .bms import BmsError, BmsStatus, apply_bms_to_status, bms_from_settings
 from .capabilities import command_for, confirmation_for, public_capabilities
 from .config import settings
 from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInverter
@@ -60,21 +61,58 @@ class ChangeRequest(BaseModel):
 class State:
     def __init__(self):
         self.inverter: BaseInverter = SimulatorInverter() if settings.mode == "simulator" else UsbHidInverter(settings.vendor_id, settings.product_id)
+        self.bms = bms_from_settings(settings)
         self.storage = Storage(settings.database_path)
         self.sessions: dict[str, str] = {}
-        self.latest: dict[str, Any] = {"connected": False, "mode": None, "status": {}, "warnings": None, "captured_at": None, "error": "Awaiting first poll"}
+        self.latest_bms: BmsStatus = self.initial_bms_status()
+        self.latest_inverter: dict[str, Any] = {"connected": False, "mode": None, "status": {}, "warnings": None, "captured_at": None, "error": "Awaiting first poll"}
+        self.latest: dict[str, Any] = self.merge_latest()
         self.diagnostics: dict[str, Any] = {}
         self.sockets: set[WebSocket] = set()
         self.task: asyncio.Task | None = None
+        self.bms_task: asyncio.Task | None = None
         self.last_stored_sample_at: datetime | None = None
-        logger.info("Inverter state initialized in %s mode", settings.mode)
+        logger.info("Inverter state initialized in %s mode; BMS mode=%s", settings.mode, settings.bms_mode)
+
+    def initial_bms_status(self) -> BmsStatus:
+        if settings.bms_mode.lower() == "disabled":
+            return BmsStatus.disabled()
+        return BmsStatus.failed(
+            settings.bms_mode.lower(),
+            "Awaiting first BMS poll",
+            address=settings.bms_bluetooth_address,
+            name=settings.bms_name,
+            protocol=settings.bms_protocol,
+        )
+
+    def bms_fresh_window_seconds(self) -> float:
+        return max(settings.bms_poll_seconds * 2, settings.bms_timeout_seconds + settings.poll_seconds)
+
+    def merge_latest(self) -> dict[str, Any]:
+        latest = {**self.latest_inverter, "status": dict(self.latest_inverter.get("status", {}))}
+        latest["status"] = apply_bms_to_status(latest["status"], self.latest_bms, self.bms_fresh_window_seconds())
+        latest["bms"] = self.latest_bms.to_dict()
+        return latest
+
+    async def update_latest(self, inverter_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+        if inverter_snapshot is not None:
+            self.latest_inverter = inverter_snapshot
+        self.latest = self.merge_latest()
+        return self.latest
 
     async def poll(self) -> None:
         if not isinstance(self.diagnostics.get("QPI"), str) or not self.diagnostics["QPI"].startswith("PI"):
             if self.latest["error"] != "inverter has not identified as PIP-compatible":
                 logger.error("Poll skipped: inverter has not identified as PIP-compatible")
-            self.latest.update({"connected": False, "error": "inverter has not identified as PIP-compatible", "captured_at": datetime.now(timezone.utc).isoformat()})
-            await self.broadcast({"type": "connection", "data": self.latest})
+            latest = await self.update_latest({
+                "connected": False,
+                "mode": None,
+                "status": {},
+                "warnings": None,
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "error": "inverter has not identified as PIP-compatible",
+            })
+            await self.broadcast({"type": "connection", "data": latest})
             return
         try:
             qpigs = await self.inverter.command("QPIGS")
@@ -88,17 +126,49 @@ class State:
             if all(value is None for value in status.values()):
                 raise InverterError(f"unexpected QPIGS response: {qpigs!r}")
             captured = datetime.now(timezone.utc).isoformat()
-            self.latest = {"connected": True, "mode": mode, "status": status, "warnings": warnings,
-                           "captured_at": captured, "error": None}
+            latest = await self.update_latest({
+                "connected": True,
+                "mode": mode,
+                "status": status,
+                "warnings": warnings,
+                "captured_at": captured,
+                "error": None,
+            })
             captured_at = datetime.fromisoformat(captured)
             if self.should_store_sample(captured_at):
-                self.storage.add_sample(self.latest["status"], captured)
+                self.storage.add_sample(latest["status"], captured)
                 self.last_stored_sample_at = captured_at
-            await self.broadcast({"type": "telemetry", "data": self.latest})
+            await self.broadcast({"type": "telemetry", "data": latest})
         except (InverterError, ValueError) as exc:
             logger.exception("Inverter telemetry poll failed")
-            self.latest.update({"connected": False, "error": str(exc), "captured_at": datetime.now(timezone.utc).isoformat()})
-            await self.broadcast({"type": "connection", "data": self.latest})
+            latest = await self.update_latest({
+                **self.latest_inverter,
+                "connected": False,
+                "error": str(exc),
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+            })
+            await self.broadcast({"type": "connection", "data": latest})
+
+    async def poll_bms(self) -> BmsStatus:
+        if settings.bms_mode.lower() == "disabled":
+            self.latest_bms = BmsStatus.disabled()
+            await self.update_latest()
+            return self.latest_bms
+        try:
+            self.latest_bms = await self.bms.status()
+            logger.info("BMS telemetry poll succeeded: source=%s connected=%s", self.latest_bms.source, self.latest_bms.connected)
+        except (BmsError, ValueError) as exc:
+            logger.exception("BMS telemetry poll failed")
+            self.latest_bms = BmsStatus.failed(
+                settings.bms_mode.lower(),
+                str(exc),
+                address=settings.bms_bluetooth_address,
+                name=settings.bms_name,
+                protocol=settings.bms_protocol,
+            )
+        latest = await self.update_latest()
+        await self.broadcast({"type": "telemetry" if self.latest_bms.connected else "connection", "data": latest})
+        return self.latest_bms
 
     async def poll_loop(self) -> None:
         while True:
@@ -111,6 +181,14 @@ class State:
             except Exception:
                 logger.exception("Telemetry compaction failed; polling will continue")
             await asyncio.sleep(settings.poll_seconds)
+
+    async def bms_poll_loop(self) -> None:
+        while True:
+            try:
+                await self.poll_bms()
+            except Exception:
+                logger.exception("BMS poll loop iteration failed; polling will continue")
+            await asyncio.sleep(settings.bms_poll_seconds)
 
     def should_store_sample(self, captured_at: datetime) -> bool:
         return (
@@ -166,10 +244,15 @@ async def lifespan(_: FastAPI):
     logger.info("Starting inverter API")
     await state.discover()
     state.task = asyncio.create_task(state.poll_loop())
+    if settings.bms_mode.lower() != "disabled":
+        state.bms_task = asyncio.create_task(state.bms_poll_loop())
     yield
     if state.task:
         state.task.cancel()
+    if state.bms_task:
+        state.bms_task.cancel()
     await state.inverter.close()
+    await state.bms.close()
     state.storage.close()
     logger.info("Stopped inverter API")
 
@@ -196,7 +279,17 @@ def utc_datetime(value: datetime) -> datetime:
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
-    return {"ok": True, "runtime_mode": settings.mode, "connected": state.latest["connected"], "error": state.latest["error"]}
+    return {
+        "ok": True,
+        "runtime_mode": settings.mode,
+        "connected": state.latest["connected"],
+        "error": state.latest["error"],
+        "bms": {
+            "mode": settings.bms_mode,
+            "connected": state.latest_bms.connected,
+            "error": state.latest_bms.error,
+        },
+    }
 
 
 @app.get("/api/status")
@@ -236,12 +329,15 @@ async def audit(_: str = Depends(session_auth)) -> dict[str, Any]:
 
 @app.get("/api/diagnostics")
 async def diagnostics(_: str = Depends(session_auth)) -> dict[str, Any]:
-    return {"diagnostics": state.diagnostics, "latest": state.latest}
+    return {"diagnostics": state.diagnostics, "latest": state.latest, "bms": state.latest_bms.to_dict()}
 
 
 @app.post("/api/diagnostics/refresh")
 async def refresh_diagnostics(_: str = Depends(session_auth)) -> dict[str, Any]:
-    return {"diagnostics": await state.discover()}
+    diagnostics = await state.discover()
+    if settings.bms_mode.lower() != "disabled":
+        await state.poll_bms()
+    return {"diagnostics": diagnostics, "bms": state.latest_bms.to_dict()}
 
 
 @app.post("/api/auth/login")

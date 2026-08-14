@@ -45,6 +45,9 @@ fi
 
 sudo groupadd --system --force sako-inverter
 sudo usermod -aG sako-inverter "$service_user"
+if getent group bluetooth >/dev/null; then
+  sudo usermod -aG bluetooth "$service_user"
+fi
 sudo install -d -o "$service_user" -g sako-inverter -m 0750 /var/lib/sako-inverter /etc/sako-inverter
 if [ ! -e /var/solar.log ]; then
   sudo install -m 0640 -o "$service_user" -g sako-inverter /dev/null /var/solar.log

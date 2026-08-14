@@ -7,6 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.main as main_module
+from app.bms import BmsCell, BmsStatus
 from app.main import app, state
 from app.storage import Storage
 
@@ -70,6 +71,45 @@ async def test_history_accepts_hours_and_custom_ranges(tmp_path):
     finally:
         state.storage.close()
         state.storage = previous_storage
+
+
+@pytest.mark.asyncio
+async def test_status_uses_fresh_bms_battery_values_and_keeps_inverter_values():
+    previous_inverter = state.latest_inverter
+    previous_bms = state.latest_bms
+    try:
+        state.latest_bms = BmsStatus(
+            enabled=True,
+            connected=True,
+            source="simulator",
+            captured_at=datetime.now(timezone.utc).isoformat(),
+            voltage=26.6,
+            current_a=-5.5,
+            capacity_percent=81,
+            cells=[BmsCell(1, 3.325), BmsCell(2, 3.326)],
+        )
+        await state.update_latest({
+            "connected": True,
+            "mode": "L",
+            "status": {"battery_voltage": 25.1, "battery_charge_current": 2, "battery_discharge_current": 0, "battery_capacity_percent": 66},
+            "warnings": None,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "error": None,
+        })
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            status = await client.get("/api/status")
+
+        payload = status.json()
+        assert payload["status"]["battery_source"] == "bms"
+        assert payload["status"]["battery_voltage"] == 26.6
+        assert payload["status"]["battery_discharge_current"] == 5.5
+        assert payload["status"]["inverter_battery_voltage"] == 25.1
+        assert payload["bms"]["connected"] is True
+    finally:
+        state.latest_bms = previous_bms
+        await state.update_latest(previous_inverter)
 
 
 @pytest.mark.asyncio

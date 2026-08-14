@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useSearchParams } from
 import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "./api";
 import type { HistoryRequest } from "./api";
-import type { Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
+import type { BmsStatus, Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
 import "./styles.css";
 
 const energySystemBackground = new URL("./assets/energy-system-background.png", import.meta.url).href;
@@ -89,7 +89,8 @@ function Overview({ status }: { status: Status | null }) {
   const now = useNow(1000);
   return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} />
     <EnergyOverview values={values} connected={Boolean(status?.connected)} />
-    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {formatLastUpdate(status?.captured_at, now)}</p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
+    <BmsCellHealth bms={status?.bms} />
+    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {formatLastUpdate(status?.captured_at, now)}</p><p>Battery source: <b>{batterySourceLabel(values.battery_source, status?.bms)}</b></p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
   </section>;
 }
 
@@ -278,6 +279,14 @@ type TimeRange = { label: string; param: string; hours: number };
 type AnalysisRangeState = { mode: "preset"; hours: number; param: string } | { mode: "custom"; start: string; end: string };
 type AnalysisUrlState = { activeGroupId: string; selectedMetricIds: string[]; range: AnalysisRangeState };
 
+const bmsCellColors = ["#84cc16", "#06b6d4", "#f59e0b", "#a78bfa", "#22c55e", "#38bdf8", "#fb7185", "#eab308"];
+const bmsCellMetricDefinitions: Record<string, MetricDefinition> = Object.fromEntries(
+  Array.from({ length: 8 }, (_, index) => {
+    const cell = index + 1;
+    return [`bms_cell_${String(cell).padStart(2, "0")}_voltage`, { id: `bms_cell_${String(cell).padStart(2, "0")}_voltage`, label: `Cell ${cell}`, unit: " V", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
+  })
+);
+
 const metricDefinitions: Record<string, MetricDefinition> = {
   battery_voltage: { id: "battery_voltage", label: "Battery voltage", unit: " V", digits: 1, color: "#f7c948" },
   pv_input_voltage: { id: "pv_input_voltage", label: "PV voltage", unit: " V", digits: 1, color: "#50c878" },
@@ -293,12 +302,30 @@ const metricDefinitions: Record<string, MetricDefinition> = {
   grid_frequency: { id: "grid_frequency", label: "Grid frequency", unit: " Hz", digits: 1, color: "#38bdf8" },
   load_percent: { id: "load_percent", label: "Load", unit: "%", digits: 0, color: "#facc15" },
   inverter_temperature_c: { id: "inverter_temperature_c", label: "Inverter temp", unit: "°C", digits: 1, color: "#ef4444" },
+  bms_battery_voltage: { id: "bms_battery_voltage", label: "BMS voltage", unit: " V", digits: 2, color: "#f7c948" },
+  bms_current_a: { id: "bms_current_a", label: "BMS current", unit: " A", digits: 2, color: "#14b8a6" },
+  bms_power_w: { id: "bms_power_w", label: "BMS power", unit: " W", digits: 0, color: "#fb923c" },
+  bms_capacity_percent: { id: "bms_capacity_percent", label: "BMS SOC", unit: "%", digits: 0, color: "#a3e635" },
+  bms_delta_cell_voltage: { id: "bms_delta_cell_voltage", label: "Cell delta", unit: " V", digits: 3, color: "#f97316" },
+  bms_min_cell_voltage: { id: "bms_min_cell_voltage", label: "Min cell", unit: " V", digits: 3, color: "#60a5fa" },
+  bms_max_cell_voltage: { id: "bms_max_cell_voltage", label: "Max cell", unit: " V", digits: 3, color: "#c084fc" },
+  bms_balance_current_a: { id: "bms_balance_current_a", label: "Balance current", unit: " A", digits: 2, color: "#2dd4bf" },
+  bms_battery_t1_c: { id: "bms_battery_t1_c", label: "Battery T1", unit: "°C", digits: 1, color: "#f87171" },
+  bms_battery_t2_c: { id: "bms_battery_t2_c", label: "Battery T2", unit: "°C", digits: 1, color: "#fb7185" },
+  bms_mos_temperature_c: { id: "bms_mos_temperature_c", label: "MOS temp", unit: "°C", digits: 1, color: "#ef4444" },
+  bms_remaining_capacity_ah: { id: "bms_remaining_capacity_ah", label: "Remaining Ah", unit: " Ah", digits: 1, color: "#99f6e4" },
+  bms_nominal_capacity_ah: { id: "bms_nominal_capacity_ah", label: "Nominal Ah", unit: " Ah", digits: 1, color: "#bfdbfe" },
+  bms_cycle_count: { id: "bms_cycle_count", label: "Cycles", unit: "", digits: 0, color: "#fde047" },
+  ...bmsCellMetricDefinitions,
 };
 
+const bmsCellMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${String(index + 1).padStart(2, "0")}_voltage`);
 const metricGroups: MetricGroup[] = [
   { id: "voltage", label: "Voltage", metricIds: ["battery_voltage", "pv_input_voltage", "grid_voltage", "output_voltage"], defaultMetricIds: ["battery_voltage", "pv_input_voltage"] },
   { id: "power", label: "Power", metricIds: ["output_active_power_w", "output_apparent_power_va", "pv_power_w"], defaultMetricIds: ["output_active_power_w", "pv_power_w"] },
   { id: "battery", label: "Battery", metricIds: ["battery_capacity_percent", "battery_voltage", "battery_charge_current", "battery_discharge_current"], defaultMetricIds: ["battery_capacity_percent", "battery_voltage"] },
+  { id: "bms", label: "BMS", metricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_current_a", "bms_power_w", "bms_delta_cell_voltage", "bms_mos_temperature_c", "bms_battery_t1_c", "bms_battery_t2_c", "bms_balance_current_a"], defaultMetricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_delta_cell_voltage"] },
+  { id: "cells", label: "Cells", metricIds: bmsCellMetricIds, defaultMetricIds: bmsCellMetricIds.slice(0, 8) },
   { id: "pv", label: "PV", metricIds: ["pv_input_voltage", "pv_input_current", "pv_power_w"], defaultMetricIds: ["pv_input_voltage", "pv_power_w"] },
   { id: "grid", label: "Grid", metricIds: ["grid_voltage", "grid_frequency"], defaultMetricIds: ["grid_voltage", "grid_frequency"] },
   { id: "load", label: "Load", metricIds: ["load_percent", "output_active_power_w", "output_apparent_power_va"], defaultMetricIds: ["load_percent", "output_active_power_w"] },
@@ -554,6 +581,43 @@ function OverviewRow({ icon, label, value, note, progress, compact = false }: { 
   return <div className="overview-row"><EnergyIcon name={icon} /><div><span>{label}</span><strong className={compact ? "compact" : ""}>{value}</strong>{progress !== undefined && <i className="soc-meter"><b style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} /></i>}{note && <small>{note}</small>}</div></div>;
 }
 
+function BmsCellHealth({ bms }: { bms?: BmsStatus | null }) {
+  if (!bms?.enabled) return null;
+  const cells = bms.cells || [];
+  const minVoltage = cells.length ? Math.min(...cells.map(cell => cell.voltage)) : null;
+  const maxVoltage = cells.length ? Math.max(...cells.map(cell => cell.voltage)) : null;
+  return <article className={`panel bms-health ${bms.connected ? "online" : "offline"}`}>
+    <div className="bms-health-head"><div><h3>JK-BMS cells</h3><p>{bms.name || bms.address || "Bluetooth BMS"} · {bms.protocol || "JK"}</p></div><span className={bms.connected ? "live on" : "live"}>{bms.connected ? "Live" : "Offline"}</span></div>
+    <div className="bms-health-stats">
+      <BmsStat label="Pack" value={display(bms.voltage, " V", 2)} />
+      <BmsStat label="SOC" value={display(bms.capacity_percent, "%", 0)} />
+      <BmsStat label="Current" value={display(bms.current_a, " A", 2)} />
+      <BmsStat label="Delta" value={display(bms.delta_cell_voltage, " V", 3)} />
+      <BmsStat label="Temp" value={display(bms.mos_temperature_c ?? bms.battery_t1_c, "°C", 1)} />
+    </div>
+    {bms.error && <p className="error">{bms.error}</p>}
+    {cells.length === 0 ? <p>No cell voltage data is available yet.</p> : <div className="bms-cell-grid">{cells.map(cell => {
+      const fill = cellVoltageFill(cell.voltage);
+      const edge = cell.voltage === minVoltage ? "low" : cell.voltage === maxVoltage ? "high" : "";
+      return <div className={`bms-cell ${edge}`} key={cell.index}><span>Cell {String(cell.index).padStart(2, "0")}</span><strong>{display(cell.voltage, " V", 3)}</strong><i><b style={{ width: `${fill}%` }} /></i></div>;
+    })}</div>}
+  </article>;
+}
+
+function BmsStat({ label, value }: { label: string; value: string }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function cellVoltageFill(value: number) {
+  return Math.min(100, Math.max(0, ((value - 2.8) / (3.65 - 2.8)) * 100));
+}
+
+function batterySourceLabel(value: number | string | null | undefined, bms?: BmsStatus | null) {
+  if (value === "bms") return "JK-BMS Bluetooth";
+  if (bms?.enabled && bms.error) return "Inverter fallback";
+  return "Inverter";
+}
+
 type IconName = "sun" | "home" | "battery" | "tower" | "panel" | "pulse" | "temp" | "inverter";
 
 function EnergyIcon({ name }: { name: IconName }) {
@@ -708,6 +772,7 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
   const activeFlags = flags.filter(flag => flag.active);
   const inactiveFlags = flags.filter(flag => !flag.active);
   const rating = recordValue(diagnostics.rating);
+  const bms = data?.bms || latest?.bms || null;
 
   const load = async () => {
     setLoading("load");
@@ -741,7 +806,7 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
       } catch {
         // Fresh discovery data is still useful if the live status poll is unavailable.
       }
-      setData({ diagnostics: refreshed.diagnostics, latest: latestStatus });
+      setData({ diagnostics: refreshed.diagnostics, latest: latestStatus, bms: refreshed.bms });
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to refresh diagnostics");
@@ -758,6 +823,7 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
     {data && <>
       <div className="diagnostics-summary">
         <DiagnosticsSummaryCard label="Connection" value={latest?.connected ? "Connected" : "Offline"} tone={latest?.connected ? "ok" : "warn"} detail={latest?.error || latest?.warnings || "Live telemetry available"} />
+        <DiagnosticsSummaryCard label="JK-BMS" value={bmsLabel(bms)} tone={bms?.enabled ? bms.connected ? "ok" : "warn" : "neutral"} detail={bmsDetail(bms)} />
         <DiagnosticsSummaryCard label="Mode" value={formatInverterMode(latest?.mode)} detail={formatDate(latest?.captured_at)} />
         <DiagnosticsSummaryCard label="Protocol" value={protocolOk ? "PIP compatible" : "Needs attention"} tone={protocolOk ? "ok" : "warn"} detail={protocol || protocolError || "No protocol reply"} />
         <DiagnosticsSummaryCard label="Active flags" value={String(activeFlags.length)} tone={activeFlags.length ? "warn" : "ok"} detail={activeFlags.length ? activeFlags.map(flag => flag.label).join(", ") : "No active status flags"} />
@@ -771,6 +837,7 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
           ...(protocolError ? [["Protocol issue", protocolError] as [string, string]] : []),
         ]} />
         <DiagnosticsPanel title="Rated configuration" rows={ratingRows.map(row => [row.label, formatRating(row.key, rating?.[row.key], row.unit, row.digits)])} />
+        <DiagnosticsPanel title="JK-BMS Bluetooth" rows={bmsRows(bms)} />
       </div>
       <article className="panel diagnostics-flags"><h3>Status flags</h3>{flags.length ? <><div className="flag-list">{activeFlags.map(flag => <span className="flag-chip active" key={flag.key} title={flag.description}>{flag.label}</span>)}{activeFlags.length === 0 && <span className="flag-chip calm">No active flags</span>}</div>{inactiveFlags.length > 0 && <div className="flag-list muted">{inactiveFlags.map(flag => <span className="flag-chip" key={flag.key} title={flag.description}>{flag.label}</span>)}</div>}</> : <p>No decoded status flags are available from the latest telemetry.</p>}</article>
       <details className="panel raw-replies"><summary>Raw protocol replies</summary><dl>{rawCommands.map(command => <div key={command}><dt>{command}</dt><dd>{formatRawValue(diagnostics[command])}</dd></div>)}</dl></details>
@@ -784,6 +851,37 @@ function DiagnosticsSummaryCard({ label, value, detail, tone = "neutral" }: { la
 
 function DiagnosticsPanel({ title, rows }: { title: string; rows: Array<[string, string]> }) {
   return <article className="panel diagnostics-panel"><h3>{title}</h3><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></article>;
+}
+
+function bmsLabel(bms: BmsStatus | null) {
+  if (!bms?.enabled) return "Disabled";
+  return bms.connected ? "Connected" : "Offline";
+}
+
+function bmsDetail(bms: BmsStatus | null) {
+  if (!bms?.enabled) return "BMS polling is disabled";
+  return bms.error || `${bms.address || "No address"} · ${formatDate(bms.captured_at)}`;
+}
+
+function bmsRows(bms: BmsStatus | null): Array<[string, string]> {
+  const rawSummary = recordValue(bms?.raw_summary);
+  const rawKeys = Array.isArray(rawSummary?.keys) ? rawSummary.keys.map(String).join(", ") : "—";
+  return [
+    ["Mode", bms?.enabled ? bms.source : "Disabled"],
+    ["Connection", bms?.connected ? "Connected" : "Offline"],
+    ["Address", bms?.address || "—"],
+    ["Name", bms?.name || "—"],
+    ["Protocol", bms?.protocol || "—"],
+    ["Last update", formatDate(bms?.captured_at)],
+    ["Pack voltage", display(bms?.voltage, " V", 2)],
+    ["Current", display(bms?.current_a, " A", 2)],
+    ["SOC", display(bms?.capacity_percent, "%", 0)],
+    ["Cells", bms?.cells?.length ? String(bms.cells.length) : "—"],
+    ["Cell delta", display(bms?.delta_cell_voltage, " V", 3)],
+    ["Raw command", textValue(rawSummary?.command) || "—"],
+    ["Raw keys", rawKeys],
+    ["Error", bms?.error || "—"],
+  ];
 }
 
 const rawCommands = ["QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG"] as const;

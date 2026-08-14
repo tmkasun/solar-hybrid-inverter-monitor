@@ -18,6 +18,14 @@ class Settings:
     product_id: int = _integer("INVERTER_USB_PRODUCT_ID", 0x5161)
     log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
     log_file: str = os.getenv("LOG_FILE", "")
+    bms_mode: str = os.getenv("BMS_MODE", "disabled")
+    bms_bluetooth_address: str = os.getenv("BMS_BLUETOOTH_ADDRESS", "")
+    bms_name: str = os.getenv("BMS_NAME", "")
+    bms_protocol: str = os.getenv("BMS_PROTOCOL", "JK02")
+    bms_cell_count: int = int(os.getenv("BMS_CELL_COUNT", "8"))
+    bms_poll_seconds: float = float(os.getenv("BMS_POLL_SECONDS", "30"))
+    bms_timeout_seconds: float = float(os.getenv("BMS_TIMEOUT_SECONDS", "25"))
+    bms_jkbms_command: str = os.getenv("BMS_JKBMS_COMMAND", "")
 
 
 settings = Settings()

@@ -1,0 +1,133 @@
+import json
+import subprocess
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.bms import (
+    BmsCell,
+    BmsError,
+    BmsStatus,
+    JkbmsCliBms,
+    apply_bms_to_status,
+    normalize_mppsolar_status,
+    parse_json_output,
+)
+
+
+def sample_mppsolar_payload():
+    return {
+        "getCellData": {
+            "_command": ["getCellData", ""],
+            "_command_description": ["BLE Cell Data inquiry", ""],
+            "Voltage_Cell01": [3.322, "V"],
+            "Voltage_Cell02": [3.324, "V"],
+            "Voltage_Cell03": [3.323, "V"],
+            "Voltage_Cell04": [3.326, "V"],
+            "Voltage_Cell05": [3.321, "V"],
+            "Voltage_Cell06": [3.324, "V"],
+            "Voltage_Cell07": [3.325, "V"],
+            "Voltage_Cell08": [3.323, "V"],
+            "Battery_Voltage": [26.588, "V"],
+            "Current_Charge": [0.0, "A"],
+            "Current_Discharge": [6.25, "A"],
+            "Percent_Remain": [78, "%"],
+            "Capacity_Remain": [93.6, "Ah"],
+            "Nominal_Capacity": [120, "Ah"],
+            "Cycle_Count": [42, ""],
+            "Balance_Current": [0.01, "A"],
+            "Battery_T1": [29.4, "°C"],
+            "Battery_T2": [29.8, "°C"],
+            "MOS_Temp": [32.1, "°C"],
+            "raw_response": ["large binary blob", ""],
+        }
+    }
+
+
+def test_normalizes_mppsolar_jkbms_status():
+    status = normalize_mppsolar_status(
+        sample_mppsolar_payload(),
+        address="C8:47:8C:E2:A0:2E",
+        name="JK-B1A20S15P",
+        protocol="JK02",
+        cell_count=8,
+    )
+
+    assert status.connected is True
+    assert status.address == "C8:47:8C:E2:A0:2E"
+    assert status.voltage == 26.588
+    assert status.current_a == -6.25
+    assert status.power_w == -166.2
+    assert status.capacity_percent == 78
+    assert len(status.cells) == 8
+    assert status.min_cell_voltage == 3.321
+    assert status.max_cell_voltage == 3.326
+    assert status.delta_cell_voltage == 0.005
+    assert "raw_response" not in status.raw_summary["keys"]
+
+
+def test_normalizer_allows_missing_optional_fields():
+    status = normalize_mppsolar_status({"Voltage_Cell01": [3.3, "V"], "Voltage_Cell02": [3.31, "V"]}, cell_count=2)
+
+    assert status.voltage == 6.61
+    assert status.capacity_percent is None
+    assert status.current_a is None
+
+
+def test_parse_json_output_reports_invalid_json():
+    with pytest.raises(BmsError, match="did not return JSON"):
+        parse_json_output("not json")
+
+
+def test_jkbms_command_timeout_is_human_readable():
+    def timeout_runner(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    bms = JkbmsCliBms("AA:BB:CC:DD:EE:FF", timeout_seconds=3, command="jkbms", runner=timeout_runner)
+
+    with pytest.raises(BmsError, match="timed out after 3s"):
+        bms._run_json_command("getCellData")
+
+
+def test_jkbms_command_normalizes_json_stdout():
+    def runner(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 0, json.dumps(sample_mppsolar_payload()), "")
+
+    bms = JkbmsCliBms("AA:BB:CC:DD:EE:FF", cell_count=8, command="jkbms", runner=runner)
+
+    assert bms._read_status().capacity_percent == 78
+
+
+def test_bms_status_overrides_fresh_battery_values_and_preserves_inverter_values():
+    status = {"battery_voltage": 25.4, "battery_charge_current": 3, "battery_discharge_current": 0, "battery_capacity_percent": 64}
+    bms = BmsStatus(
+        enabled=True,
+        connected=True,
+        source="simulator",
+        captured_at=datetime.now(timezone.utc).isoformat(),
+        voltage=26.5,
+        current_a=-4.2,
+        capacity_percent=79,
+        cells=[BmsCell(1, 3.312), BmsCell(2, 3.313)],
+    )
+
+    merged = apply_bms_to_status(status, bms, 60)
+
+    assert merged["battery_source"] == "bms"
+    assert merged["battery_voltage"] == 26.5
+    assert merged["battery_charge_current"] == 0
+    assert merged["battery_discharge_current"] == 4.2
+    assert merged["battery_capacity_percent"] == 79
+    assert merged["inverter_battery_voltage"] == 25.4
+    assert merged["bms_cell_01_voltage"] == 3.312
+
+
+def test_stale_bms_status_keeps_inverter_battery_values():
+    stale = datetime.now(timezone.utc) - timedelta(minutes=10)
+    bms = BmsStatus(enabled=True, connected=True, source="simulator", captured_at=stale.isoformat(), voltage=26.5, capacity_percent=79)
+
+    merged = apply_bms_to_status({"battery_voltage": 25.4, "battery_capacity_percent": 64}, bms, 60)
+
+    assert merged["battery_source"] == "inverter"
+    assert merged["battery_voltage"] == 25.4
+    assert "inverter_battery_voltage" not in merged

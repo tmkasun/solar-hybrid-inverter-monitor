@@ -59,6 +59,32 @@ If the earlier Docker deployment is still running on the Pi, stop it with `docke
 
 The API logs connection setup, protocol probes, failed USB commands (including malformed reply bytes), polling failures, settings changes, and database errors. It never logs passwords, session IDs, or CSRF tokens.
 
+## JK-BMS Bluetooth telemetry
+
+The app can read a JK-BMS over Bluetooth as a read-only second telemetry source. BMS values become authoritative for battery SOC, voltage, current, cell voltages, and temperatures when fresh; if Bluetooth polling fails, the dashboard falls back to the inverter battery values.
+
+First discover and verify the BMS from the Pi:
+
+```sh
+./scripts/bms-cli scan --json
+./scripts/bms-cli status --address C8:47:8C:E2:A0:2E --protocol JK02 --json
+./scripts/bms-cli monitor --address C8:47:8C:E2:A0:2E --protocol JK02 --interval 30
+```
+
+Enable API polling in `/etc/sako-inverter/api.env` after the CLI read succeeds:
+
+```env
+BMS_MODE=jkbms
+BMS_BLUETOOTH_ADDRESS=C8:47:8C:E2:A0:2E
+BMS_NAME=JK-B1A20S15P
+BMS_PROTOCOL=JK02
+BMS_CELL_COUNT=8
+BMS_POLL_SECONDS=30
+BMS_TIMEOUT_SECONDS=25
+```
+
+Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.
+
 ## Raspberry Pi deployment
 
 On the Pi, install Docker Engine and the Compose plugin. From the laptop run `scripts/deploy-pi user@PI_HOST:/opt/sako-inverter`. The first run copies the udev rule and creates `.env`; set a unique bcrypt `ADMIN_PASSWORD_HASH` there, then run the deploy command again.
@@ -76,7 +102,7 @@ On the Pi, install the API service (this installs Python packages in `backend/.v
 ```sh
 cd ~/projects/solar-hybrid-inverter-monitor
 # If Python reports "No module named ensurepip":
-sudo apt update && sudo apt install -y python3-venv
+sudo apt update && sudo apt install -y python3-venv build-essential pkg-config libglib2.0-dev bluetooth bluez
 # Only if this Pi previously ran the Docker stack:
 docker compose down
 ./scripts/pi-api-install
