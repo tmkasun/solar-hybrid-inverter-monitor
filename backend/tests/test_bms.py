@@ -12,6 +12,7 @@ from app.bms import (
     BmsStatus,
     JkbmsCliBms,
     apply_bms_to_status,
+    compact_process_detail,
     normalize_mppsolar_status,
     parse_json_output,
     scan_bluetooth_devices,
@@ -132,6 +133,34 @@ def test_jkbms_status_retries_incomplete_json_output():
 
     assert bms._read_status().capacity_percent == 78
     assert len(attempts) == 2
+
+
+def test_jkbms_status_retries_mppsolar_subprocess_crash():
+    attempts = []
+    traceback = """Traceback (most recent call last):
+  File "/tmp/jkbms", line 1, in <module>
+TypeError: object of type 'NoneType' has no len()
+"""
+
+    def runner(*args, **kwargs):
+        attempts.append(args[0])
+        if len(attempts) == 1:
+            return subprocess.CompletedProcess(args[0], 1, "", traceback)
+        return subprocess.CompletedProcess(args[0], 0, json.dumps(sample_mppsolar_payload()), "")
+
+    bms = JkbmsCliBms("AA:BB:CC:DD:EE:FF", cell_count=8, command="jkbms", retries=1, retry_delay_seconds=0, runner=runner)
+
+    assert bms._read_status().capacity_percent == 78
+    assert len(attempts) == 2
+
+
+def test_compacts_traceback_to_final_error_line():
+    detail = compact_process_detail("""Traceback (most recent call last):
+  File "/tmp/jkbms", line 1, in <module>
+TypeError: object of type 'NoneType' has no len()
+""")
+
+    assert detail == "TypeError: object of type 'NoneType' has no len()"
 
 
 def test_bms_status_overrides_fresh_battery_values_and_preserves_inverter_values():

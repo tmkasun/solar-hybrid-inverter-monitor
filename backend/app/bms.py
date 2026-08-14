@@ -184,6 +184,8 @@ class JkbmsCliBms(BaseBms):
                 logger.warning("JK-BMS read attempt %d/%d failed: %s", attempt + 1, self.retries + 1, exc)
                 time.sleep(self.retry_delay_seconds)
         assert last_error is not None
+        if self.retries:
+            raise BmsError(f"JK-BMS read failed after {self.retries + 1} attempts: {last_error}") from last_error
         raise last_error
 
     def _run_json_command(self, bms_command: str) -> dict[str, Any]:
@@ -200,7 +202,7 @@ class JkbmsCliBms(BaseBms):
         except subprocess.TimeoutExpired as exc:
             raise BmsError(f"jkbms {bms_command} timed out after {self.timeout_seconds:g}s") from exc
         if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
+            detail = compact_process_detail(completed.stderr or completed.stdout)
             raise BmsError(f"jkbms {bms_command} failed with exit code {completed.returncode}: {detail}")
         return parse_json_output(completed.stdout)
 
@@ -214,6 +216,13 @@ def default_jkbms_command() -> str:
     if sibling.exists():
         return str(sibling)
     return shutil.which("jkbms") or "jkbms"
+
+
+def compact_process_detail(output: str | None) -> str:
+    lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+    if not lines:
+        return "no output"
+    return next((line for line in reversed(lines) if line.startswith(("TypeError:", "ValueError:", "RuntimeError:", "Exception:"))), lines[-1])
 
 
 def bms_from_settings(settings: Any) -> BaseBms:
