@@ -1275,6 +1275,38 @@ pre {
     text-transform: uppercase;
 }
 
+.energy-flow-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.view-switch {
+    display: flex;
+    padding: 3px;
+    border: 1px solid #dbe2e9;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 8px 18px #1b293512;
+}
+
+.view-switch button {
+    min-height: 0;
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #52606d;
+    font-size: .72rem;
+    font-weight: 850;
+}
+
+.view-switch button.active {
+    background: #ff7a00;
+    color: #fff;
+    box-shadow: 0 6px 14px #ff7a0033;
+}
+
 .diagram-status {
     display: flex;
     align-items: center;
@@ -1300,20 +1332,24 @@ pre {
 }
 
 .energy-diagram {
+    display: block;
     margin: 0;
+    padding: 0 24px;
     overflow: visible;
 }
 
 .energy-stage {
     position: relative;
-    width: min(100%, 980px);
+    width: 100%;
     margin: 0 auto;
     aspect-ratio: 16 / 9;
+    background: #f8fafc;
 }
 
 .energy-bg {
     position: absolute;
     inset: 0;
+    z-index: 1;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -1322,7 +1358,7 @@ pre {
 .energy-lines {
     position: absolute;
     inset: 0;
-    z-index: 2;
+    z-index: 3;
     pointer-events: none;
 }
 
@@ -1353,9 +1389,9 @@ pre {
 
 .flow-dot {
     position: absolute;
-    z-index: 3;
-    width: 10px;
-    height: 10px;
+    z-index: 4;
+    width: 9px;
+    height: 9px;
     border: 2px solid #fff;
     border-radius: 50%;
     background: #ff7a00;
@@ -1388,20 +1424,41 @@ pre {
     top: 74.7%;
 }
 
+.energy-metrics {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.energy-3d-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.energy-3d-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
 .metric-card {
     z-index: 4;
     background: #ffffffee;
     border: 1px solid #dde4eb;
-    border-radius: 10px;
-    box-shadow: 0 16px 36px #1b29351f;
+    border-radius: 8px;
+    box-shadow: 0 10px 24px #1b29351a;
     backdrop-filter: blur(6px);
     position: absolute;
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 6px;
     align-items: flex-start;
-    min-width: 172px;
-    padding: 12px 14px;
+    width: 132px;
+    padding: 7px 8px;
+    pointer-events: auto;
 }
 
 .metric-card-button {
@@ -1419,8 +1476,8 @@ pre {
 }
 
 .metric-card svg {
-    width: 32px;
-    height: 32px;
+    width: 20px;
+    height: 20px;
     fill: none;
     stroke: #ff7a00;
     stroke-width: 2.7;
@@ -1431,34 +1488,38 @@ pre {
 .metric-card span {
     display: block;
     color: #34404b;
-    font-size: .9rem;
+    font-size: .66rem;
     font-weight: 750;
 }
 
 .metric-card strong {
     display: block;
     color: #1f2937;
-    font-size: 1.7rem;
+    font-size: 1rem;
     line-height: 1;
     margin-top: 3px;
 }
 
 .metric-card dl {
     display: grid;
-    gap: 3px;
-    margin: 8px 0 0;
+    gap: 2px;
+    margin: 5px 0 0;
 }
 
 .metric-card dl div {
     display: grid;
-    grid-template-columns: minmax(48px, auto) minmax(0, 1fr);
-    gap: 8px;
+    grid-template-columns: minmax(42px, auto) minmax(0, 1fr);
+    gap: 5px;
     align-items: baseline;
+}
+
+.energy-stage .metric-card dl div:nth-child(n+3) {
+    display: none;
 }
 
 .metric-card dt {
     color: #7b8792;
-    font-size: .64rem;
+    font-size: .48rem;
     font-weight: 800;
     letter-spacing: .04em;
     text-transform: uppercase;
@@ -1467,35 +1528,56 @@ pre {
 .metric-card dd {
     margin: 0;
     color: #ff7a00;
-    font-size: .74rem;
+    font-size: .56rem;
     font-weight: 800;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
+.battery-card {
+    cursor: pointer;
+    left: 69%;
+    top: 68%;
+}
+
 .pv-card {
-    left: 7.4%;
-    top: 9.8%;
+    left: 18%;
+    top: 17%;
 }
 
 .load-card {
-    left: 58.4%;
-    top: 35.1%;
+    left: 58%;
+    top: 43%;
 }
 
-.battery-card {
+.grid-card {
+    left: 7%;
+    top: 42%;
+}
+
+.energy-stage.image .pv-card {
+    left: 8%;
+    top: 8%;
+}
+
+.energy-stage.image .load-card {
+    left: 60%;
+    top: 33%;
+}
+
+.energy-stage.image .battery-card {
     left: 31%;
-    top: 76.8%;
+    top: 75%;
+}
+
+.energy-stage.image .grid-card {
+    left: 63%;
+    top: 74%;
 }
 
 .battery-card svg {
     stroke: #55b964;
-}
-
-.grid-card {
-    left: 62%;
-    top: 77.2%;
 }
 
 .grid-card svg {
@@ -2027,34 +2109,13 @@ pre {
 
 @media (max-width: 900px) and (min-width: 721px) {
     .energy-diagram {
-        margin-bottom: 96px;
-    }
-
-    .load-card {
-        left: 60%;
-        top: 30%;
-    }
-
-    .battery-card {
-        left: 28%;
-        top: 70%;
-    }
-
-    .grid-card {
-        left: 60%;
-        top: 70%;
+        padding: 0 18px;
     }
 }
 
 @keyframes wire-flow {
     to {
         stroke-dashoffset: -28;
-    }
-}
-
-@keyframes battery-wire-flow {
-    to {
-        stroke-dashoffset: -42;
     }
 }
 
@@ -2075,38 +2136,47 @@ pre {
         font-size: 1.05rem;
     }
 
+    .energy-flow-actions {
+        flex-direction: column-reverse;
+        align-items: flex-end;
+        gap: 7px;
+    }
+
+    .view-switch button {
+        padding: 4px 8px;
+        font-size: .66rem;
+    }
+
     .diagram-status {
         font-size: .78rem;
     }
 
     .energy-diagram {
-        margin-bottom: 82px;
+        padding: 0 14px;
     }
 
     .metric-card {
-        grid-template-columns: 24px minmax(0, 1fr);
-        gap: 6px;
-        min-width: 118px;
-        padding: 8px;
-        border-radius: 8px;
+        grid-template-columns: 16px minmax(0, 1fr);
+        gap: 4px;
+        width: 84px;
+        padding: 5px;
     }
 
     .metric-card svg {
-        width: 22px;
-        height: 22px;
+        width: 16px;
+        height: 16px;
     }
 
     .metric-card strong {
-        font-size: 1rem;
+        font-size: .78rem;
     }
 
     .metric-card span {
-        font-size: .66rem;
+        font-size: .52rem;
     }
 
     .metric-card dl {
-        gap: 2px;
-        margin-top: 5px;
+        display: none;
     }
 
     .metric-card dl div {
@@ -2115,44 +2185,51 @@ pre {
     }
 
     .metric-card dt {
-        font-size: .48rem;
+        font-size: .4rem;
     }
 
     .metric-card dd {
-        font-size: .56rem;
+        font-size: .46rem;
     }
 
     .pv-card {
-        left: 4%;
-        top: 7%;
+        left: 3%;
+        top: 5%;
     }
 
     .load-card {
-        left: 58%;
-        top: 20%;
+        left: 72%;
+        top: 28%;
     }
 
     .battery-card {
-        left: 14%;
-        top: 65%;
+        left: 69%;
+        top: 72%;
     }
 
     .grid-card {
-        left: 58%;
-        top: 76%;
+        left: 4%;
+        top: 55%;
     }
 
-    .flow-dot {
-        width: 8px;
-        height: 8px;
+    .energy-stage.image .pv-card {
+        left: 3%;
+        top: 6%;
     }
 
-    .flow-path {
-        stroke-width: 2.4;
+    .energy-stage.image .load-card {
+        left: 66%;
+        top: 22%;
     }
 
-    .flow-path.active {
-        stroke-width: 3.4;
+    .energy-stage.image .battery-card {
+        left: 16%;
+        top: 68%;
+    }
+
+    .energy-stage.image .grid-card {
+        left: 66%;
+        top: 70%;
     }
 
     .overview-below {
@@ -2258,10 +2335,6 @@ pre {
         width: 100%;
     }
 
-    .energy-diagram {
-        margin-bottom: 90px;
-    }
-
     .metric-card {
         min-width: 108px;
         padding: 6px 7px;
@@ -2286,21 +2359,6 @@ pre {
 
     .metric-card dd {
         font-size: .52rem;
-    }
-
-    .load-card {
-        left: 58%;
-        top: 19%;
-    }
-
-    .battery-card {
-        left: 15%;
-        top: 64%;
-    }
-
-    .grid-card {
-        left: 58%;
-        top: 78%;
     }
 
     .overview-below {

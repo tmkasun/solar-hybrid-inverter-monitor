@@ -533,6 +533,7 @@ function timeRangeLabel(range: AnalysisRangeState) {
 }
 
 function EnergyFlow({ values, connected, onBatteryOpen }: { values: StatusValues; connected: boolean; onBatteryOpen: () => void }) {
+  const [viewMode, setViewMode] = useState<EnergyFlowView>(() => localStorage.getItem("sako_energy_flow_view") === "image" ? "image" : "3d");
   const pvPower = numeric(values.pv_input_voltage) * numeric(values.pv_input_current);
   const loadPower = numeric(values.output_active_power_w);
   const chargePower = numeric(values.battery_voltage) * numeric(values.battery_charge_current);
@@ -548,48 +549,324 @@ function EnergyFlow({ values, connected, onBatteryOpen }: { values: StatusValues
   const loadActive = loadPower > 1;
   const gridDirection = gridActive ? "Importing" : "Standby";
   const batteryDirection = batteryCharging ? "Charging" : batteryDischarging ? "Discharging" : "Idle";
+  useEffect(() => { localStorage.setItem("sako_energy_flow_view", viewMode); }, [viewMode]);
 
   return <section className="energy-flow panel" aria-label="Live energy flow">
-    <div className="energy-flow-heading"><div><p className="eyebrow">Live energy flow</p><h2>Where your power is going</h2></div><div className={`diagram-status ${connected ? "online" : "offline"}`}><span />{connected ? "Live" : "Offline"}</div></div>
+    <div className="energy-flow-heading"><div><p className="eyebrow">Live energy flow</p><h2>Where your power is going</h2></div><div className="energy-flow-actions"><div className="view-switch" aria-label="Energy flow view"><button type="button" className={viewMode === "3d" ? "active" : ""} aria-pressed={viewMode === "3d"} onClick={() => setViewMode("3d")}>3D</button><button type="button" className={viewMode === "image" ? "active" : ""} aria-pressed={viewMode === "image"} onClick={() => setViewMode("image")}>Image</button></div><div className={`diagram-status ${connected ? "online" : "offline"}`}><span />{connected ? "Live" : "Offline"}</div></div></div>
     <div className="energy-diagram">
-      <div className="energy-stage">
-        <img className="energy-bg" src={energySystemBackground} alt="" aria-hidden="true" />
-        <svg className="energy-lines" viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">
-          <path className={`flow-path ${solarActive ? "active" : "muted"}`} d="M 13 11.8 V 17.8 Q 13 20 15.2 20 H 25.5" />
-          <path className={`flow-path ${solarActive ? "active" : ""}`} d="M 31 19.3 C 35 24 38.5 28.8 41.2 35.2" />
-          <path className={`flow-path ${loadActive ? "active" : ""}`} d="M 42 35.2 H 50.5 Q 55 35.2 55 31.6 H 58.4" />
-          <path className={`flow-path battery-flow ${batteryCharging ? "active charging" : ""} ${batteryDischarging ? "active discharging reverse" : ""}`} d="M 41.2 35.2 V 44.2" />
-          <path className={`flow-path grid-flow ${gridActive ? "active importing reverse" : ""}`} d="M 42 36.7 H 54.6 Q 59 36.7 59 42 H 66" />
-        </svg>
-        <div className="flow-dot pv-source" />
-        <div className="flow-dot inverter-port" />
-        <div className="flow-dot load-port" />
-        <div className="flow-dot battery-port" />
-        <div className="flow-dot grid-port" />
-        <MetricCard className="pv-card" icon="sun" title="PV" value={pvPower > 1 ? watts(pvPower) : "0 W"} details={[
-          ["Voltage", display(values.pv_input_voltage, " V")],
-          ["Current", display(values.pv_input_current, " A")],
-        ]} />
-        <MetricCard className="load-card" icon="home" title="Load" value={loadPower > 1 ? watts(loadPower) : "0 W"} details={[
-          ["Load", display(values.load_percent, "%", 0)],
-          ["Output", `${display(values.output_voltage, " V")} · ${display(values.output_frequency, " Hz")}`],
-          ["Apparent", display(values.output_apparent_power_va, " VA", 0)],
-        ]} />
-        <MetricCard className="battery-card" icon="battery" title="Battery" value={batteryActive ? watts(Math.abs(batteryPower)) : "0 W"} details={[
-          ["SOC", `${batteryPercent.toFixed(0)}% · ${batteryDirection}`],
-          ["Voltage", display(values.battery_voltage, " V")],
-          ["Charge", display(values.battery_charge_current, " A", 0)],
-          ["Discharge", display(values.battery_discharge_current, " A", 0)],
-        ]} onClick={onBatteryOpen} ariaLabel="Open battery and BMS detail diagram" />
-        <MetricCard className="grid-card" icon="tower" title="Grid" value={gridActive ? watts(gridPower) : "0 W"} details={[
-          ["Status", gridDirection],
-          ["Voltage", display(values.grid_voltage, " V")],
-          ["Frequency", display(values.grid_frequency, " Hz")],
-        ]} />
+      <div className={`energy-stage ${viewMode}`}>
+        {viewMode === "3d" ? <EnergyFlow3D solarActive={solarActive} loadActive={loadActive} gridActive={gridActive} batteryCharging={batteryCharging} batteryDischarging={batteryDischarging} /> : <EnergyFlowImage solarActive={solarActive} loadActive={loadActive} gridActive={gridActive} batteryCharging={batteryCharging} batteryDischarging={batteryDischarging} />}
+        <div className="energy-metrics" aria-label="Live energy details">
+          <MetricCard className="pv-card" icon="sun" title="PV" value={pvPower > 1 ? watts(pvPower) : "0 W"} details={[
+            ["Voltage", display(values.pv_input_voltage, " V")],
+            ["Current", display(values.pv_input_current, " A")],
+          ]} />
+          <MetricCard className="load-card" icon="home" title="Load" value={loadPower > 1 ? watts(loadPower) : "0 W"} details={[
+            ["Load", display(values.load_percent, "%", 0)],
+            ["Output", `${display(values.output_voltage, " V")} · ${display(values.output_frequency, " Hz")}`],
+            ["Apparent", display(values.output_apparent_power_va, " VA", 0)],
+          ]} />
+          <MetricCard className="battery-card" icon="battery" title="Battery" value={batteryActive ? watts(Math.abs(batteryPower)) : "0 W"} details={[
+            ["SOC", `${batteryPercent.toFixed(0)}% · ${batteryDirection}`],
+            ["Voltage", display(values.battery_voltage, " V")],
+            ["Charge", display(values.battery_charge_current, " A", 0)],
+            ["Discharge", display(values.battery_discharge_current, " A", 0)],
+          ]} onClick={onBatteryOpen} ariaLabel="Open battery and BMS detail diagram" />
+          <MetricCard className="grid-card" icon="tower" title="Grid" value={gridActive ? watts(gridPower) : "0 W"} details={[
+            ["Status", gridDirection],
+            ["Voltage", display(values.grid_voltage, " V")],
+            ["Frequency", display(values.grid_frequency, " Hz")],
+          ]} />
+        </div>
       </div>
     </div>
     <div className="flow-legend"><span><i className="legend-dot solar" />Solar production</span><span><i className="legend-dot battery" />Battery storage</span><span><i className="legend-dot grid" />CEB utility</span><span>Live values update automatically</span></div>
   </section>;
+}
+
+type EnergyFlowView = "3d" | "image";
+
+function EnergyFlowImage({ solarActive, loadActive, gridActive, batteryCharging, batteryDischarging }: { solarActive: boolean; loadActive: boolean; gridActive: boolean; batteryCharging: boolean; batteryDischarging: boolean }) {
+  return <>
+    <img className="energy-bg" src={energySystemBackground} alt="" aria-hidden="true" />
+    <svg className="energy-lines" viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">
+      <path className={`flow-path ${solarActive ? "active" : "muted"}`} d="M 13 11.8 V 17.8 Q 13 20 15.2 20 H 25.5" />
+      <path className={`flow-path ${solarActive ? "active" : ""}`} d="M 31 19.3 C 35 24 38.5 28.8 41.2 35.2" />
+      <path className={`flow-path ${loadActive ? "active" : ""}`} d="M 42 35.2 H 50.5 Q 55 35.2 55 31.6 H 58.4" />
+      <path className={`flow-path battery-flow ${batteryCharging ? "active charging" : ""} ${batteryDischarging ? "active discharging reverse" : ""}`} d="M 41.2 35.2 V 44.2" />
+      <path className={`flow-path grid-flow ${gridActive ? "active importing reverse" : ""}`} d="M 42 36.7 H 54.6 Q 59 36.7 59 42 H 66" />
+    </svg>
+    <div className="flow-dot pv-source" />
+    <div className="flow-dot inverter-port" />
+    <div className="flow-dot load-port" />
+    <div className="flow-dot battery-port" />
+    <div className="flow-dot grid-port" />
+  </>;
+}
+
+function EnergyFlow3D({ solarActive, loadActive, gridActive, batteryCharging, batteryDischarging }: { solarActive: boolean; loadActive: boolean; gridActive: boolean; batteryCharging: boolean; batteryDischarging: boolean }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf8fafc);
+    const camera = new THREE.PerspectiveCamera(29, 16 / 9, 0.1, 100);
+    camera.position.set(5.15, 3.25, 5.15);
+    camera.lookAt(0.12, 0.98, 0.2);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xcbd5e1, 2.4));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+    keyLight.position.set(3.6, 5.8, 4.4);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0x9fd7ff, 1.1);
+    fillLight.position.set(-4.2, 2.8, 3.2);
+    scene.add(fillLight);
+
+    const ground = new THREE.MeshStandardMaterial({ color: 0xe7f0e7, roughness: 0.76 });
+    const panelBlue = new THREE.MeshStandardMaterial({ color: 0x0f4f9f, roughness: 0.36, metalness: 0.18 });
+    const panelFrame = new THREE.MeshStandardMaterial({ color: 0xd9e2ec, roughness: 0.24, metalness: 0.72 });
+    const houseWall = new THREE.MeshStandardMaterial({ color: 0xf5f0e8, roughness: 0.64 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x8f4b27, roughness: 0.56 });
+    const warmLight = new THREE.MeshStandardMaterial({ color: 0xffc76b, emissive: 0xff9f1c, emissiveIntensity: 0.55, roughness: 0.28 });
+    const batteryBlue = new THREE.MeshStandardMaterial({ color: 0x1458c8, roughness: 0.42, metalness: 0.12 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.55 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.82 });
+    const inverterWhite = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.34, metalness: 0.04 });
+    const solarWire = new THREE.MeshStandardMaterial({ color: 0xff9f1c, emissive: 0x552200, roughness: 0.34 });
+    const batteryWire = new THREE.MeshStandardMaterial({ color: 0x55b964, emissive: 0x103b17, roughness: 0.34 });
+    const gridWire = new THREE.MeshStandardMaterial({ color: 0x64748b, emissive: 0x111827, roughness: 0.34 });
+    const glowSolar = new THREE.MeshStandardMaterial({ color: 0xffb84d, emissive: 0xff7a00, emissiveIntensity: 1.25 });
+    const glowBattery = new THREE.MeshStandardMaterial({ color: 0x7ee787, emissive: 0x35b85b, emissiveIntensity: 1.25 });
+    const glowGrid = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, emissive: 0x475569, emissiveIntensity: 1.1 });
+    const mutedWire = new THREE.MeshStandardMaterial({ color: 0xb8c4cf, roughness: 0.55, transparent: true, opacity: 0.42 });
+
+    const meshes: THREE.Object3D[] = [];
+    const textures: THREE.Texture[] = [];
+    const movingDots: Array<{ mesh: THREE.Mesh; curve: THREE.CatmullRomCurve3; active: () => boolean; reverse?: () => boolean; speed: number; offset: number }> = [];
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const addMesh = (geometry: THREE.BufferGeometry, material: THREE.Material | THREE.Material[], position: THREE.Vector3Tuple, castShadow = true) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      meshes.push(mesh);
+      return mesh;
+    };
+    const addBox = (size: THREE.Vector3Tuple, material: THREE.Material, position: THREE.Vector3Tuple) => addMesh(new THREE.BoxGeometry(...size), material, position);
+    const makeCurve = (points: THREE.Vector3Tuple[]) => new THREE.CatmullRomCurve3(points.map(point => new THREE.Vector3(...point)));
+    const addCable = (points: THREE.Vector3Tuple[], material: THREE.Material, active: () => boolean, reverse?: () => boolean, radius = 0.025, dotMaterial = glowSolar, speed = 0.34) => {
+      const curve = makeCurve(points);
+      addMesh(new THREE.TubeGeometry(curve, 84, radius, 10, false), active() ? material : mutedWire, [0, 0, 0]);
+      for (const offset of [0, 0.34, 0.68]) {
+        const dot = addMesh(new THREE.SphereGeometry(radius * 1.9, 16, 16), dotMaterial, [0, 0, 0], false) as THREE.Mesh;
+        movingDots.push({ mesh: dot, curve, active, reverse, speed, offset });
+      }
+      return curve;
+    };
+    const addCylinderBetween = (start: THREE.Vector3Tuple, end: THREE.Vector3Tuple, radius: number, material: THREE.Material) => {
+      const from = new THREE.Vector3(...start);
+      const to = new THREE.Vector3(...end);
+      const direction = to.clone().sub(from);
+      const mesh = addMesh(new THREE.CylinderGeometry(radius, radius, direction.length(), 12), material, [0, 0, 0]);
+      mesh.position.copy(from.clone().add(to).multiplyScalar(0.5));
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+      return mesh;
+    };
+
+    const addPanelArray = (position: THREE.Vector3Tuple, rotationX: number, width: number, depth: number, columns: number, rows: number) => {
+      const group = new THREE.Group();
+      group.position.set(...position);
+      group.rotation.x = rotationX;
+      scene.add(group);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(width, 0.045, depth), panelFrame);
+      frame.castShadow = true;
+      frame.receiveShadow = true;
+      group.add(frame);
+      meshes.push(frame);
+      const cellWidth = (width - 0.16) / columns;
+      const cellDepth = (depth - 0.16) / rows;
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < columns; col += 1) {
+          const panel = new THREE.Mesh(new THREE.BoxGeometry(cellWidth - 0.035, 0.052, cellDepth - 0.035), panelBlue);
+          panel.position.set(-width / 2 + 0.08 + cellWidth / 2 + col * cellWidth, 0.02, -depth / 2 + 0.08 + cellDepth / 2 + row * cellDepth);
+          panel.castShadow = true;
+          panel.receiveShadow = true;
+          group.add(panel);
+          meshes.push(panel);
+        }
+      }
+      return group;
+    };
+    const addRoofTiles = (xStart: number, xEnd: number, y: number, zStart: number, rows: number, rotationX: number) => {
+      for (let row = 0; row < rows; row += 1) {
+        const tile = addCylinderBetween([xStart, y + row * 0.006, zStart + row * 0.16], [xEnd, y + row * 0.006, zStart + row * 0.16], 0.018, roofMat);
+        tile.rotation.x += rotationX;
+      }
+    };
+    const addWindow = (x: number, y: number, z: number, width: number, height: number) => {
+      addBox([width, height, 0.035], black, [x, y, z + 0.02]);
+      addBox([width - 0.06, height - 0.06, 0.04], warmLight, [x, y, z + 0.045]);
+    };
+    const inverterFaceMaterial = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 520;
+      const context = canvas.getContext("2d");
+      if (!context) return inverterWhite;
+      context.fillStyle = "#f8fafc";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "#111827";
+      context.beginPath();
+      context.moveTo(0, 120);
+      context.lineTo(42, 162);
+      context.lineTo(42, 360);
+      context.lineTo(0, 402);
+      context.closePath();
+      context.fill();
+      context.beginPath();
+      context.moveTo(320, 120);
+      context.lineTo(278, 162);
+      context.lineTo(278, 360);
+      context.lineTo(320, 402);
+      context.closePath();
+      context.fill();
+      context.fillStyle = "#111827";
+      context.font = "bold 54px Arial";
+      context.textAlign = "center";
+      context.fillText("SAKO", 160, 88);
+      context.fillStyle = "#ef4444";
+      context.fillRect(133, 35, 12, 46);
+      context.fillStyle = "#ef4444";
+      context.font = "bold 30px Arial";
+      context.fillText("SUNON", 160, 250);
+      context.fillStyle = "#111827";
+      context.font = "bold 20px Arial";
+      context.fillText("PRO", 160, 278);
+      context.fillRect(96, 305, 128, 150);
+      context.fillStyle = "#39d98a";
+      context.fillRect(119, 328, 82, 45);
+      context.fillStyle = "#10351f";
+      context.font = "bold 15px Arial";
+      context.fillText("230V", 160, 356);
+      for (let index = 0; index < 4; index += 1) {
+        context.beginPath();
+        context.arc(116 + index * 30, 420, 9, 0, Math.PI * 2);
+        context.fillStyle = "#f7c948";
+        context.fill();
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      textures.push(texture);
+      return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.38, metalness: 0.02 });
+    };
+
+    addBox([8.2, 0.08, 4.35], ground, [0, -0.05, 0.08]);
+
+    addBox([4.75, 1.8, 1.68], houseWall, [0.12, 0.9, -0.38]);
+    addBox([0.12, 0.78, 0.1], houseWall, [-1.85, 0.39, 0.5]);
+    addBox([0.12, 0.78, 0.1], houseWall, [1.85, 0.39, 0.5]);
+    addBox([4.3, 0.08, 0.34], new THREE.MeshStandardMaterial({ color: 0xd7d2c7, roughness: 0.68 }), [0.12, 0.04, 0.72]);
+
+    const roofLeft = addBox([5.18, 0.08, 1.2], roofMat, [0.12, 1.84, -0.76]);
+    roofLeft.rotation.x = -0.34;
+    const roofRight = addBox([5.18, 0.08, 1.2], roofMat, [0.12, 1.84, 0.08]);
+    roofRight.rotation.x = 0.34;
+    addCylinderBetween([-2.55, 2.1, -0.34], [2.75, 2.1, -0.34], 0.035, roofMat);
+    addRoofTiles(-2.55, 2.75, 1.92, -1.22, 5, -0.34);
+    addRoofTiles(-2.55, 2.75, 1.8, -0.02, 4, 0.34);
+
+    addPanelArray([-1.05, 1.92, 0.08], 0.34, 1.55, 0.72, 2, 2);
+    addPanelArray([0.98, 1.92, 0.08], 0.34, 1.7, 0.72, 2, 2);
+
+    addWindow(-1.0, 0.92, 0.49, 0.58, 0.48);
+    addWindow(0.15, 0.92, 0.49, 0.58, 0.48);
+    addWindow(1.3, 0.92, 0.49, 0.58, 0.48);
+    addWindow(-0.72, 0.36, 0.49, 0.7, 0.54);
+    addWindow(0.58, 0.36, 0.49, 0.7, 0.54);
+
+    addBox([0.44, 0.94, 0.18], new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.42 }), [2.38, 0.47, 0.52]);
+    addBox([0.3, 0.52, 0.035], new THREE.MeshStandardMaterial({ color: 0xffd28a, emissive: 0xff9f1c, emissiveIntensity: 0.48, roughness: 0.34 }), [2.38, 0.48, 0.625]);
+
+    addBox([0.24, 0.44, 0.08], inverterWhite, [2.62, 0.55, 0.56]);
+    addBox([0.08, 0.035, 0.09], black, [2.62, 0.8, 0.56]);
+    addBox([0.035, 0.24, 0.02], black, [2.505, 0.55, 0.605]);
+    addBox([0.035, 0.24, 0.02], black, [2.735, 0.55, 0.605]);
+    addMesh(new THREE.PlaneGeometry(0.205, 0.35), inverterFaceMaterial(), [2.62, 0.56, 0.606], false);
+    for (let index = 0; index < 4; index += 1) {
+      const x = 2.34 + index * 0.075;
+      addBox([0.055, 0.17, 0.095], batteryBlue, [x, 0.18, 1.02]);
+      addBox([0.05, 0.018, 0.085], black, [x, 0.28, 1.02]);
+      addBox([0.016, 0.016, 0.016], metal, [x - 0.014, 0.31, 0.99]);
+      addBox([0.016, 0.016, 0.016], metal, [x + 0.014, 0.31, 1.05]);
+    }
+
+    addCylinderBetween([-3.2, 0.0, 1.35], [-3.2, 1.75, 1.35], 0.03, metal);
+    addCylinderBetween([-3.5, 1.25, 1.35], [-2.9, 1.25, 1.35], 0.02, metal);
+    addCylinderBetween([-3.42, 0.88, 1.35], [-2.98, 0.88, 1.35], 0.016, metal);
+    addCable([[-2.9, 1.25, 1.35], [-1.35, 1.76, 0.86], [1.05, 1.68, 0.54], [2.58, 0.62, 0.56]], gridWire, () => gridActive, undefined, 0.012, glowGrid, 0.28);
+
+    addCable([[-1.05, 2.0, 0.08], [0.4, 1.78, 0.32], [2.58, 0.62, 0.56]], solarWire, () => solarActive, undefined, 0.014, glowSolar, 0.38);
+    addCable([[0.98, 2.0, 0.08], [1.55, 1.58, 0.34], [2.58, 0.62, 0.56]], solarWire, () => solarActive, undefined, 0.014, glowSolar, 0.36);
+    addCable([[2.54, 0.5, 0.58], [1.55, 0.88, 0.47], [0.28, 0.82, 0.46]], solarWire, () => loadActive, undefined, 0.016, glowSolar, 0.32);
+    addCable([[2.6, 0.36, 0.62], [2.52, 0.32, 0.82], [2.45, 0.29, 1.02]], batteryWire, () => batteryCharging || batteryDischarging, () => batteryDischarging, 0.012, glowBattery, 0.32);
+
+    const resize = () => {
+      const width = container.clientWidth || 960;
+      const height = container.clientHeight || 540;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize();
+
+    const clock = new THREE.Clock();
+    const frameId = { current: 0 };
+    const animate = () => {
+      const elapsed = clock.getElapsedTime();
+      for (const dot of movingDots) {
+        dot.mesh.visible = dot.active() && !reducedMotion;
+        if (!dot.mesh.visible) continue;
+        let t = (elapsed * dot.speed + dot.offset) % 1;
+        if (dot.reverse?.()) t = 1 - t;
+        dot.mesh.position.copy(dot.curve.getPoint(t));
+      }
+      renderer.render(scene, camera);
+      frameId.current = requestAnimationFrame(animate);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(frameId.current);
+      observer.disconnect();
+      renderer.dispose();
+      container.removeChild(renderer.domElement);
+      for (const object of meshes) {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of materials) material.dispose();
+        }
+      }
+      for (const texture of textures) texture.dispose();
+    };
+  }, [batteryCharging, batteryDischarging, gridActive, loadActive, solarActive]);
+
+  return <div className="energy-3d-canvas" ref={containerRef} aria-hidden="true" />;
 }
 
 function MetricCard({ className, icon, title, value, details, onClick, ariaLabel }: { className: string; icon: IconName; title: string; value: string; details: Array<[string, string]>; onClick?: () => void; ariaLabel?: string }) {
