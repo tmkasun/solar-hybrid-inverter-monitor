@@ -290,6 +290,56 @@ pre {
     color: #aebfca;
 }
 
+.analysis-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.analysis-actions select {
+    flex: 0 0 auto;
+    min-height: 42px;
+    padding: 9px 34px 9px 11px;
+    border: 1px solid #45606f;
+    border-radius: 7px;
+    background: #0f1d24;
+    color: #edf6fa;
+    font-weight: 750;
+    color-scheme: dark;
+}
+
+.analysis-actions select:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+.auto-refresh-toggle {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 9px 11px;
+    border: 1px solid #45606f;
+    border-radius: 7px;
+    background: #10202a;
+    color: #d7e7ef;
+    font-size: .9rem;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.auto-refresh-toggle.active {
+    border-color: #55b964;
+    background: #203b31;
+    color: #e7fff1;
+}
+
+.auto-refresh-toggle input {
+    accent-color: #55b964;
+}
+
 .analysis-controls {
     display: grid;
     gap: 16px;
@@ -639,8 +689,20 @@ pre {
 }
 
 @media (max-width: 520px) {
-    .analysis-page .section-title button {
+    .analysis-actions {
         width: 100%;
+    }
+
+    .auto-refresh-toggle {
+        flex: 1 1 100%;
+        justify-content: center;
+    }
+
+    .analysis-actions select,
+    .analysis-page .section-title .analysis-actions button {
+        flex: 1 1 calc(50% - 4px);
+        min-width: 0;
+        width: auto;
     }
 
     .segmented button,

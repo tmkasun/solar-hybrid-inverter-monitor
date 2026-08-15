@@ -114,6 +114,12 @@ function DataAnalysis() {
   const [rawSort, setRawSort] = useState<RawSort>({ key: "captured_at", direction: "desc" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(() => localStorage.getItem(autoRefreshEnabledStorageKey) !== "false");
+  const [autoRefreshIntervalMs, setAutoRefreshIntervalMs] = useState(() => storedAutoRefreshInterval());
+  const historyLoadInFlight = useRef(false);
+  const historyLoadQueued = useRef(false);
+  const historyRequestRef = useRef(historyRequest);
+  historyRequestRef.current = historyRequest;
   const enrichedSamples = useMemo(() => samples.map(enrichSample), [samples]);
   const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, analysisState.range) })), [enrichedSamples, historyKey]);
   const stats = useMemo(() => selectedMetrics.map(metric => metricStats(metric, enrichedSamples)), [selectedMetrics, enrichedSamples]);
@@ -123,19 +129,37 @@ function DataAnalysis() {
   const zoomLabel = activeZoomRange ? zoomRangeLabel(chartData, activeZoomRange) : "Full selected range";
   const customRangeError = customDateRangeError(customStart, customEnd);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
+    if (historyLoadInFlight.current) {
+      historyLoadQueued.current = true;
+      return;
+    }
+    historyLoadInFlight.current = true;
     setLoading(true);
     try {
-      const history = await api.history(historyRequest);
-      setSamples(history.samples);
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to load telemetry history");
+      do {
+        historyLoadQueued.current = false;
+        try {
+          const history = await api.history(historyRequestRef.current);
+          setSamples(history.samples);
+          setError("");
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Unable to load telemetry history");
+        }
+      } while (historyLoadQueued.current);
     } finally {
+      historyLoadInFlight.current = false;
       setLoading(false);
     }
-  };
-  useEffect(() => { void loadHistory(); }, [historyKey]);
+  }, []);
+  useEffect(() => { void loadHistory(); }, [historyKey, loadHistory]);
+  useEffect(() => { localStorage.setItem(autoRefreshEnabledStorageKey, String(autoRefreshEnabled)); }, [autoRefreshEnabled]);
+  useEffect(() => { localStorage.setItem(autoRefreshIntervalStorageKey, String(autoRefreshIntervalMs)); }, [autoRefreshIntervalMs]);
+  useEffect(() => {
+    if (!autoRefreshEnabled) return;
+    const timer = window.setInterval(() => { void loadHistory(); }, autoRefreshIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [autoRefreshEnabled, autoRefreshIntervalMs, loadHistory]);
   useEffect(() => { setZoomRange(null); }, [historyKey, samples.length]);
   useEffect(() => {
     if (analysisState.range.mode === "custom") {
@@ -169,7 +193,14 @@ function DataAnalysis() {
   };
 
   return <section className="analysis-page">
-    <div className="section-title"><div><h2>Data analysis</h2><p>Compare inverter telemetry by parameter group and time range.</p></div><button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? "Loading..." : "Refresh"}</button></div>
+    <div className="section-title">
+      <div><h2>Data analysis</h2><p>Compare inverter telemetry by parameter group and time range.</p></div>
+      <div className="analysis-actions">
+        <label className={autoRefreshEnabled ? "auto-refresh-toggle active" : "auto-refresh-toggle"}><input type="checkbox" checked={autoRefreshEnabled} onChange={event => setAutoRefreshEnabled(event.target.checked)} /><span>Auto refresh</span></label>
+        <select aria-label="Auto refresh interval" value={autoRefreshIntervalMs} disabled={!autoRefreshEnabled} onChange={event => setAutoRefreshIntervalMs(Number(event.target.value))}>{autoRefreshIntervals.map(interval => <option key={interval.ms} value={interval.ms}>{interval.label}</option>)}</select>
+        <button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? "Loading..." : "Refresh"}</button>
+      </div>
+    </div>
     <div className="analysis-controls panel">
       <div><span>Range</span><div className="segmented">{timeRanges.map(range => <button key={range.hours} className={analysisState.range.mode === "preset" && analysisState.range.hours === range.hours ? "active" : ""} onClick={() => selectPresetRange(range)}>{range.label}</button>)}</div>
         <div className="custom-range">
@@ -363,6 +394,20 @@ const timeRanges: TimeRange[] = [
 
 const defaultAnalysisGroupId = "voltage";
 const defaultTimeRange = timeRanges[0];
+const autoRefreshEnabledStorageKey = "sako_analysis_auto_refresh_enabled";
+const autoRefreshIntervalStorageKey = "sako_analysis_auto_refresh_interval_ms";
+const autoRefreshIntervals = [
+  { label: "5 sec", ms: 5_000 },
+  { label: "10 sec", ms: 10_000 },
+  { label: "30 sec", ms: 30_000 },
+  { label: "1 min", ms: 60_000 },
+];
+const defaultAutoRefreshIntervalMs = 30_000;
+
+function storedAutoRefreshInterval() {
+  const stored = Number(localStorage.getItem(autoRefreshIntervalStorageKey));
+  return autoRefreshIntervals.some(interval => interval.ms === stored) ? stored : defaultAutoRefreshIntervalMs;
+}
 
 function parseAnalysisQuery(params: URLSearchParams): AnalysisUrlState {
   const activeGroup = metricGroups.find(group => group.id === params.get("group")) || metricGroups.find(group => group.id === defaultAnalysisGroupId) || metricGroups[0];
