@@ -2,7 +2,7 @@ export type StatusFlag = { position: number; key: string; label: string; descrip
 export type StatusValues = Record<string, number | string | null> & { status_flags?: StatusFlag[] };
 export type HistoryValue = number | string | null | StatusFlag[];
 export type HistorySample = Record<string, HistoryValue> & { captured_at: string; status_flags?: StatusFlag[] };
-export type BmsCell = { index: number; voltage: number };
+export type BmsCell = { index: number; voltage: number; resistance_mohm?: number | null; wire_resistance_mohm?: number | null };
 export type BmsStatus = {
   enabled: boolean;
   connected: boolean;

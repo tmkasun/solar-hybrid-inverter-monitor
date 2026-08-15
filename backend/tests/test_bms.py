@@ -12,6 +12,7 @@ from app.bms import (
     BmsStatus,
     JkbmsCliBms,
     apply_bms_to_status,
+    bms_history_metrics,
     compact_process_detail,
     normalize_mppsolar_status,
     parse_json_output,
@@ -32,6 +33,14 @@ def sample_mppsolar_payload():
             "Voltage_Cell06": [3.324, "V"],
             "Voltage_Cell07": [3.325, "V"],
             "Voltage_Cell08": [3.323, "V"],
+            "WireRes_Cell01": [0.42, "mOhm"],
+            "WireRes_Cell02": [0.43, "mOhm"],
+            "WireRes_Cell03": [0.44, "mOhm"],
+            "WireRes_Cell04": [0.45, "mOhm"],
+            "WireRes_Cell05": [0.46, "mOhm"],
+            "WireRes_Cell06": [0.47, "mOhm"],
+            "WireRes_Cell07": [0.48, "mOhm"],
+            "WireRes_Cell08": [0.49, "mOhm"],
             "Battery_Voltage": [26.588, "V"],
             "Current_Charge": [0.0, "A"],
             "Current_Discharge": [6.25, "A"],
@@ -64,6 +73,10 @@ def test_normalizes_mppsolar_jkbms_status():
     assert status.power_w == -166.2
     assert status.capacity_percent == 78
     assert len(status.cells) == 8
+    assert status.cells[0].resistance_mohm == 0.42
+    assert status.cells[0].wire_resistance_mohm == 0.42
+    assert status.cells[7].resistance_mohm == 0.49
+    assert status.cells[7].wire_resistance_mohm == 0.49
     assert status.min_cell_voltage == 3.321
     assert status.max_cell_voltage == 3.326
     assert status.delta_cell_voltage == 0.005
@@ -76,6 +89,27 @@ def test_normalizer_allows_missing_optional_fields():
     assert status.voltage == 6.61
     assert status.capacity_percent is None
     assert status.current_a is None
+    assert status.cells[0].resistance_mohm is None
+    assert status.cells[0].wire_resistance_mohm is None
+
+
+def test_bms_history_metrics_includes_cell_resistance_when_present():
+    bms = BmsStatus(
+        enabled=True,
+        connected=True,
+        source="simulator",
+        captured_at=datetime.now(timezone.utc).isoformat(),
+        cells=[BmsCell(1, 3.312, wire_resistance_mohm=0.421), BmsCell(2, 3.313)],
+    )
+
+    metrics = bms_history_metrics(bms)
+
+    assert metrics["bms_cell_01_voltage"] == 3.312
+    assert metrics["bms_cell_01_resistance_mohm"] == 0.421
+    assert metrics["bms_cell_01_wire_resistance_mohm"] == 0.421
+    assert metrics["bms_cell_02_voltage"] == 3.313
+    assert "bms_cell_02_resistance_mohm" not in metrics
+    assert "bms_cell_02_wire_resistance_mohm" not in metrics
 
 
 def test_normalizer_prefers_computed_power_over_raw_jkbms_power_field():

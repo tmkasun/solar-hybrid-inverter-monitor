@@ -9,6 +9,7 @@ import "./styles.css";
 
 const energySystemBackground = new URL("./assets/energy-system-background.png", import.meta.url).href;
 const settingsPriorityDiagram = new URL("./assets/settings-priority-diagram.png", import.meta.url).href;
+const batteryPackBmsDiagram = new URL("./assets/battery-pack-bms-diagram.png", import.meta.url).href;
 
 function App() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -86,11 +87,13 @@ const appRoutes = [
 function Overview({ status }: { status: Status | null }) {
   const values: StatusValues = status?.status || {};
   const activeFlags = values.status_flags?.filter(flag => flag.active) || [];
+  const [batteryDetailOpen, setBatteryDetailOpen] = useState(false);
   const now = useNow(1000);
-  return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} />
+  return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} onBatteryOpen={() => setBatteryDetailOpen(true)} />
     <EnergyOverview values={values} connected={Boolean(status?.connected)} />
     <BmsCellHealth bms={status?.bms} />
     <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {formatLastUpdate(status?.captured_at, now)}</p><p>Battery source: <b>{batterySourceLabel(values.battery_source, status?.bms)}</b></p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
+    {batteryDetailOpen && <BatteryDetailModal values={values} bms={status?.bms} onClose={() => setBatteryDetailOpen(false)} />}
   </section>;
 }
 
@@ -286,6 +289,18 @@ const bmsCellMetricDefinitions: Record<string, MetricDefinition> = Object.fromEn
     return [`bms_cell_${String(cell).padStart(2, "0")}_voltage`, { id: `bms_cell_${String(cell).padStart(2, "0")}_voltage`, label: `Cell ${cell}`, unit: " V", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
   })
 );
+const bmsCellResistanceMetricDefinitions: Record<string, MetricDefinition> = Object.fromEntries(
+  Array.from({ length: 8 }, (_, index) => {
+    const cell = index + 1;
+    return [`bms_cell_${String(cell).padStart(2, "0")}_resistance_mohm`, { id: `bms_cell_${String(cell).padStart(2, "0")}_resistance_mohm`, label: `Cell ${cell} resistance`, unit: " mΩ", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
+  })
+);
+const bmsCellWireResistanceMetricDefinitions: Record<string, MetricDefinition> = Object.fromEntries(
+  Array.from({ length: 8 }, (_, index) => {
+    const cell = index + 1;
+    return [`bms_cell_${String(cell).padStart(2, "0")}_wire_resistance_mohm`, { id: `bms_cell_${String(cell).padStart(2, "0")}_wire_resistance_mohm`, label: `Cell ${cell} wire`, unit: " mΩ", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
+  })
+);
 
 const metricDefinitions: Record<string, MetricDefinition> = {
   battery_voltage: { id: "battery_voltage", label: "Battery voltage", unit: " V", digits: 1, color: "#f7c948" },
@@ -317,15 +332,19 @@ const metricDefinitions: Record<string, MetricDefinition> = {
   bms_nominal_capacity_ah: { id: "bms_nominal_capacity_ah", label: "Nominal Ah", unit: " Ah", digits: 1, color: "#bfdbfe" },
   bms_cycle_count: { id: "bms_cycle_count", label: "Cycles", unit: "", digits: 0, color: "#fde047" },
   ...bmsCellMetricDefinitions,
+  ...bmsCellResistanceMetricDefinitions,
+  ...bmsCellWireResistanceMetricDefinitions,
 };
 
 const bmsCellMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${String(index + 1).padStart(2, "0")}_voltage`);
+const bmsCellResistanceMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${String(index + 1).padStart(2, "0")}_resistance_mohm`);
+const bmsCellWireResistanceMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${String(index + 1).padStart(2, "0")}_wire_resistance_mohm`);
 const metricGroups: MetricGroup[] = [
   { id: "voltage", label: "Voltage", metricIds: ["battery_voltage", "pv_input_voltage", "grid_voltage", "output_voltage"], defaultMetricIds: ["battery_voltage", "pv_input_voltage"] },
   { id: "power", label: "Power", metricIds: ["output_active_power_w", "output_apparent_power_va", "pv_power_w"], defaultMetricIds: ["output_active_power_w", "pv_power_w"] },
   { id: "battery", label: "Battery", metricIds: ["battery_capacity_percent", "battery_voltage", "battery_charge_current", "battery_discharge_current"], defaultMetricIds: ["battery_capacity_percent", "battery_voltage"] },
   { id: "bms", label: "BMS", metricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_current_a", "bms_power_w", "bms_delta_cell_voltage", "bms_mos_temperature_c", "bms_battery_t1_c", "bms_battery_t2_c", "bms_balance_current_a"], defaultMetricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_delta_cell_voltage"] },
-  { id: "cells", label: "Cells", metricIds: bmsCellMetricIds, defaultMetricIds: bmsCellMetricIds.slice(0, 8) },
+  { id: "cells", label: "Cells", metricIds: [...bmsCellMetricIds, ...bmsCellWireResistanceMetricIds, ...bmsCellResistanceMetricIds], defaultMetricIds: bmsCellMetricIds.slice(0, 8) },
   { id: "pv", label: "PV", metricIds: ["pv_input_voltage", "pv_input_current", "pv_power_w"], defaultMetricIds: ["pv_input_voltage", "pv_power_w"] },
   { id: "grid", label: "Grid", metricIds: ["grid_voltage", "grid_frequency"], defaultMetricIds: ["grid_voltage", "grid_frequency"] },
   { id: "load", label: "Load", metricIds: ["load_percent", "output_active_power_w", "output_apparent_power_va"], defaultMetricIds: ["load_percent", "output_active_power_w"] },
@@ -513,7 +532,7 @@ function timeRangeLabel(range: AnalysisRangeState) {
   return `${hours / 24} day${hours === 24 ? "" : "s"}`;
 }
 
-function EnergyFlow({ values, connected }: { values: StatusValues; connected: boolean }) {
+function EnergyFlow({ values, connected, onBatteryOpen }: { values: StatusValues; connected: boolean; onBatteryOpen: () => void }) {
   const pvPower = numeric(values.pv_input_voltage) * numeric(values.pv_input_current);
   const loadPower = numeric(values.output_active_power_w);
   const chargePower = numeric(values.battery_voltage) * numeric(values.battery_charge_current);
@@ -561,7 +580,7 @@ function EnergyFlow({ values, connected }: { values: StatusValues; connected: bo
           ["Voltage", display(values.battery_voltage, " V")],
           ["Charge", display(values.battery_charge_current, " A", 0)],
           ["Discharge", display(values.battery_discharge_current, " A", 0)],
-        ]} />
+        ]} onClick={onBatteryOpen} ariaLabel="Open battery and BMS detail diagram" />
         <MetricCard className="grid-card" icon="tower" title="Grid" value={gridActive ? watts(gridPower) : "0 W"} details={[
           ["Status", gridDirection],
           ["Voltage", display(values.grid_voltage, " V")],
@@ -573,8 +592,115 @@ function EnergyFlow({ values, connected }: { values: StatusValues; connected: bo
   </section>;
 }
 
-function MetricCard({ className, icon, title, value, details }: { className: string; icon: IconName; title: string; value: string; details: Array<[string, string]> }) {
-  return <article className={`metric-card ${className}`}><EnergyIcon name={icon} /><div><span>{title}</span><strong>{value}</strong><dl>{details.map(([label, detail]) => <div key={label}><dt>{label}</dt><dd>{detail}</dd></div>)}</dl></div></article>;
+function MetricCard({ className, icon, title, value, details, onClick, ariaLabel }: { className: string; icon: IconName; title: string; value: string; details: Array<[string, string]>; onClick?: () => void; ariaLabel?: string }) {
+  const content = <><EnergyIcon name={icon} /><div><span>{title}</span><strong>{value}</strong><dl>{details.map(([label, detail]) => <div key={label}><dt>{label}</dt><dd>{detail}</dd></div>)}</dl></div></>;
+  if (onClick) return <button type="button" className={`metric-card metric-card-button ${className}`} onClick={onClick} aria-label={ariaLabel || title}>{content}</button>;
+  return <article className={`metric-card ${className}`}>{content}</article>;
+}
+
+const batteryCellPins = [
+  { left: "16%", top: "39%" },
+  { left: "25.5%", top: "36.5%" },
+  { left: "35%", top: "34.5%" },
+  { left: "44.5%", top: "32.5%" },
+  { left: "54%", top: "31.5%" },
+  { left: "63.5%", top: "30.5%" },
+  { left: "73%", top: "30.5%" },
+  { left: "82.5%", top: "32%" },
+];
+
+const batteryCellWirePaths = [
+  "M 37 43 C 34 41 30 40 25 39",
+  "M 38 43 C 35 41 34 39 32 38",
+  "M 40 43 C 40 41 40 39 40 37",
+  "M 42 43 C 45 41 47 39 49 36.5",
+  "M 44 43 C 50 41 54 38.5 58 36",
+  "M 46 43 C 56 41 62 38 67 35.5",
+  "M 47 43 C 62 41 70 38 76 35",
+  "M 48 43 C 67 41 78 38 85 35.5",
+];
+
+const batteryCellWireDots = [
+  { left: "25%", top: "69.3%" },
+  { left: "32%", top: "67.6%" },
+  { left: "40%", top: "65.8%" },
+  { left: "49%", top: "64.9%" },
+  { left: "58%", top: "64%" },
+  { left: "67%", top: "63.1%" },
+  { left: "76%", top: "62.2%" },
+  { left: "85%", top: "63.1%" },
+];
+
+function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bms?: BmsStatus | null; onClose: () => void }) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const cells = Array.from({ length: 8 }, (_, index) => bms?.cells?.find(cell => cell.index === index + 1) || { index: index + 1, voltage: null, resistance_mohm: null, wire_resistance_mohm: null });
+  const voltages = cells.map(cell => finiteNumber(cell.voltage)).filter((value): value is number => value !== null);
+  const minVoltage = voltages.length ? Math.min(...voltages) : null;
+  const maxVoltage = voltages.length ? Math.max(...voltages) : null;
+  const batteryPercent = Math.min(100, Math.max(0, numeric(values.battery_capacity_percent)));
+  const current = finiteNumber(bms?.current_a);
+  const balanceCurrent = finiteNumber(bms?.balance_current_a);
+  const flowState = current === null || Math.abs(current) < 0.05 ? "idle" : current > 0 ? "charging" : "discharging";
+  const flowLabel = flowState === "charging" ? "Charging" : flowState === "discharging" ? "Discharging" : "Idle";
+  const balanceState = balanceCurrent === null || Math.abs(balanceCurrent) < 0.005 ? "Idle" : balanceCurrent > 0 ? "Balancing charge" : "Balancing discharge";
+  const packStats: Array<[string, string]> = [
+    ["Pack", display(bms?.voltage ?? values.battery_voltage, " V", 2)],
+    ["SOC", bms?.capacity_percent !== null && bms?.capacity_percent !== undefined ? display(bms.capacity_percent, "%", 0) : `${batteryPercent.toFixed(0)}%`],
+    ["Current", display(bms?.current_a, " A", 2)],
+    ["Power", display(bms?.power_w, " W", 0)],
+    ["State", flowLabel],
+    ["Delta", display(bms?.delta_cell_voltage, " V", 3)],
+    ["Balance", `${balanceState} · ${display(bms?.balance_current_a, " A", 2)}`],
+    ["Cycles", display(bms?.cycle_count, "", 0)],
+    ["Remaining", `${display(bms?.remaining_capacity_ah, " Ah", 1)} / ${display(bms?.nominal_capacity_ah, " Ah", 1)}`],
+    ["Battery T1", display(bms?.battery_t1_c, "°C", 1)],
+    ["Battery T2", display(bms?.battery_t2_c, "°C", 1)],
+    ["MOS", display(bms?.mos_temperature_c, "°C", 1)],
+    ["Updated", formatDate(bms?.captured_at)],
+  ];
+  const bmsStatusClass = bms?.connected && !bms.stale ? "on" : "";
+  const bmsStatusLabel = !bms?.enabled ? "Disabled" : bms.stale ? "Stale" : bms.connected ? "Live" : "Offline";
+
+  return <div className="battery-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className={`battery-modal ${bms?.connected ? "online" : "offline"} ${bms?.stale ? "stale" : ""}`} role="dialog" aria-modal="true" aria-labelledby="battery-detail-title">
+      <div className="battery-modal-head"><div><p className="eyebrow">Battery detail</p><h2 id="battery-detail-title">Battery pack and JK-BMS</h2><p>{bms?.name || bms?.address || "Bluetooth BMS"} · {bms?.protocol || "JK"} · cells 1-8 left to right</p></div><div><span className={`live ${bmsStatusClass}`}>{bmsStatusLabel}</span><button className="battery-modal-close" type="button" onClick={onClose} aria-label="Close battery detail">×</button></div></div>
+      {(bms?.error || bms?.last_error) && <p className={bms.error ? "error battery-modal-message" : "bms-note battery-modal-message"}>{bms.error || `Last poll error: ${bms.last_error}`}</p>}
+      <div className="battery-state-strip" aria-label="Battery BMS state">
+        <span className={`state-pill ${flowState}`}>{flowLabel}</span>
+        <span className={`state-pill ${balanceState === "Idle" ? "idle" : "balancing"}`}>{balanceState}</span>
+        <span className="state-pill neutral">{display(bms?.current_a, " A", 2)}</span>
+        <span className="state-pill neutral">{display(bms?.power_w, " W", 0)}</span>
+      </div>
+      <div className="battery-detail-layout">
+        <div className={`battery-detail-stage ${flowState}`}>
+          <img src={batteryPackBmsDiagram} alt="" aria-hidden="true" />
+          <svg className="battery-wire-overlay" viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">
+            <path className={`battery-power-wire negative ${flowState !== "idle" ? "active" : ""}`} d="M 18 38 C 16 43 20 48 30 49 H 54 C 66 49 75 43 83 37" />
+            <path className={`battery-power-wire positive ${flowState !== "idle" ? "active" : ""}`} d="M 87 31 C 84 36 76 41 64 42 H 52 C 46 42 42 43 38 45" />
+            {batteryCellWirePaths.map((path, index) => <path key={index} className={`battery-cell-wire ${bms?.connected && !bms.stale ? "active" : ""}`} d={path} style={{ animationDelay: `${index * -0.13}s` }} />)}
+          </svg>
+          {batteryCellWireDots.map((position, index) => <span key={index} className="battery-wire-dot" style={position} />)}
+          {cells.map((cell, index) => {
+            const voltage = finiteNumber(cell.voltage);
+            const edge = voltage !== null && voltage === minVoltage ? "low" : voltage !== null && voltage === maxVoltage ? "high" : "";
+            const wireResistance = cell.wire_resistance_mohm ?? cell.resistance_mohm;
+            return <div className={`battery-cell-pin ${edge}`} key={cell.index} style={batteryCellPins[index]}>
+              <span>Cell {cell.index}</span>
+              <strong>{display(cell.voltage, " V", 3)}</strong>
+              <small>wire {display(wireResistance, " mΩ", 3)}</small>
+            </div>;
+          })}
+          <div className="bms-module-pin"><span>BMS</span><strong>{balanceState}</strong><small>{display(bms?.balance_current_a, " A", 2)}</small></div>
+        </div>
+        <div className="battery-detail-stats">{packStats.map(([label, value]) => <BmsStat key={label} label={label} value={value} />)}</div>
+      </div>
+    </section>
+  </div>;
 }
 
 function OverviewRow({ icon, label, value, note, progress, compact = false }: { icon: IconName; label: string; value: string; note?: string; progress?: number; compact?: boolean }) {

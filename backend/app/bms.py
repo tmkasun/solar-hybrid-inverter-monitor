@@ -32,6 +32,8 @@ class BmsError(RuntimeError):
 class BmsCell:
     index: int
     voltage: float
+    resistance_mohm: float | None = None
+    wire_resistance_mohm: float | None = None
 
 
 @dataclass(frozen=True)
@@ -123,7 +125,15 @@ class SimulatorBms(BaseBms):
         self.cell_count = max(1, cell_count)
 
     async def status(self) -> BmsStatus:
-        cells = [BmsCell(index=index, voltage=round(3.328 + (index % 3) * 0.003, 3)) for index in range(1, self.cell_count + 1)]
+        cells = [
+            BmsCell(
+                index=index,
+                voltage=round(3.328 + (index % 3) * 0.003, 3),
+                resistance_mohm=round(0.42 + (index % 4) * 0.015, 3),
+                wire_resistance_mohm=round(0.42 + (index % 4) * 0.015, 3),
+            )
+            for index in range(1, self.cell_count + 1)
+        ]
         return _status_from_values(
             source="simulator",
             connected=True,
@@ -303,8 +313,14 @@ def normalize_mppsolar_status(data: dict[str, Any], *, address: str = "", name: 
     cells: list[BmsCell] = []
     for index in range(1, max(1, cell_count) + 1):
         voltage = _number(payload, f"Voltage_Cell{index:02d}", f"Cell{index:02d}_Voltage", f"cell_{index:02d}_voltage")
+        wire_resistance_mohm = _cell_wire_resistance_mohm(payload, index)
         if voltage is not None and voltage > 0:
-            cells.append(BmsCell(index=index, voltage=round(voltage, 4)))
+            cells.append(BmsCell(
+                index=index,
+                voltage=round(voltage, 4),
+                resistance_mohm=_round(wire_resistance_mohm, 4),
+                wire_resistance_mohm=_round(wire_resistance_mohm, 4),
+            ))
 
     voltage = _number(payload, "Battery_Voltage", "Pack_Voltage", "Total_Voltage")
     if voltage is None and cells:
@@ -445,6 +461,10 @@ def bms_history_metrics(status: BmsStatus) -> dict[str, Any]:
     metrics = {key: value for key, value in fields.items() if value is not None}
     for cell in status.cells:
         metrics[f"bms_cell_{cell.index:02d}_voltage"] = cell.voltage
+        wire_resistance = cell.wire_resistance_mohm if cell.wire_resistance_mohm is not None else cell.resistance_mohm
+        if wire_resistance is not None:
+            metrics[f"bms_cell_{cell.index:02d}_resistance_mohm"] = wire_resistance
+            metrics[f"bms_cell_{cell.index:02d}_wire_resistance_mohm"] = wire_resistance
     return metrics
 
 
@@ -498,6 +518,40 @@ def _signed_current(data: dict[str, Any]) -> float | None:
     return charge - discharge
 
 
+def _cell_wire_resistance_mohm(data: dict[str, Any], index: int) -> float | None:
+    value = _lookup(
+        data,
+        f"WireRes_Cell{index:02d}",
+        f"Wire_Res_Cell{index:02d}",
+        f"WireResCell{index:02d}",
+        f"WireResistance_Cell{index:02d}",
+        f"Wire_Resistance_Cell{index:02d}",
+        f"Cell{index:02d}_WireRes",
+        f"Cell{index:02d}_Wire_Res",
+        f"Cell{index:02d}_Wire_Resistance",
+        f"Resistance_Cell{index:02d}",
+        f"Cell{index:02d}_Resistance",
+        f"cell_{index:02d}_resistance",
+        f"Cell_Resistance{index:02d}",
+        f"Cell{index:02d}_Internal_Resistance",
+        f"Internal_Resistance_Cell{index:02d}",
+    )
+    amount, unit = _measurement_amount_and_unit(value)
+    if amount is None:
+        return None
+    unit_key = _normalized_key(unit or "")
+    unit_text = str(unit or "").strip().lower()
+    if unit_text in {"Ω", "Ω"}:
+        return amount * 1000
+    if unit_key in {"ohm", "omega"}:
+        return amount * 1000
+    if unit_text.startswith(("uΩ", "uΩ", "µΩ", "µΩ")):
+        return amount / 1000
+    if unit_key.startswith(("uohm", "microohm")):
+        return amount / 1000
+    return amount
+
+
 def _lookup(data: dict[str, Any], *names: str) -> Any:
     by_key = {_normalized_key(key): value for key, value in data.items()}
     for name in names:
@@ -505,6 +559,26 @@ def _lookup(data: dict[str, Any], *names: str) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _measurement_amount_and_unit(value: Any) -> tuple[float | None, str | None]:
+    unit: str | None = None
+    raw = value
+    if isinstance(value, (list, tuple)):
+        raw = value[0] if value else None
+        unit = str(value[1]) if len(value) > 1 and value[1] is not None else None
+    elif isinstance(value, dict):
+        unit_value = value.get("unit") or value.get("Unit") or value.get("units") or value.get("Units")
+        unit = str(unit_value) if unit_value is not None else None
+        raw = _plain_value(value)
+    else:
+        raw = _plain_value(value)
+    if raw is None or raw == "":
+        return None, unit
+    try:
+        return float(raw), unit
+    except (TypeError, ValueError):
+        return None, unit
 
 
 def _plain_value(value: Any) -> Any:

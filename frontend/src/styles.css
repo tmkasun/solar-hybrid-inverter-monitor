@@ -1404,6 +1404,20 @@ pre {
     padding: 12px 14px;
 }
 
+.metric-card-button {
+    min-height: 0;
+    border: 1px solid #dde4eb;
+    text-align: left;
+}
+
+.metric-card-button:hover,
+.metric-card-button:focus-visible {
+    background: #fff;
+    border-color: #55b964;
+    box-shadow: 0 18px 42px #1b293533, 0 0 0 3px #55b96433;
+    outline: none;
+}
+
 .metric-card svg {
     width: 32px;
     height: 32px;
@@ -1713,6 +1727,321 @@ pre {
     background: linear-gradient(90deg, #f7c948, #55b964);
 }
 
+.battery-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: #071016cc;
+    backdrop-filter: blur(8px);
+}
+
+.battery-modal {
+    width: min(1080px, 100%);
+    max-height: min(92vh, 940px);
+    overflow: auto;
+    background: #f8fafc;
+    color: #1f2937;
+    border: 1px solid #dbe2e9;
+    border-radius: 10px;
+    box-shadow: 0 30px 90px #00000066;
+}
+
+.battery-modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 22px 12px;
+}
+
+.battery-modal-head h2 {
+    margin: 2px 0 0;
+    font-size: 1.25rem;
+}
+
+.battery-modal-head p {
+    margin: 6px 0 0;
+    color: #5f6f7c;
+}
+
+.battery-modal-head>div:last-child {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+}
+
+.battery-modal .eyebrow {
+    margin: 0;
+    color: #ff7a00 !important;
+    font-size: .72rem;
+    font-weight: 850;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.battery-modal-close {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+    border: 1px solid #d8e0e7;
+    border-radius: 50%;
+    background: #fff;
+    color: #52606d;
+    font-size: 1.45rem;
+    line-height: 1;
+}
+
+.battery-modal-close:hover,
+.battery-modal-close:focus-visible {
+    background: #eef4f7;
+    outline: none;
+}
+
+.battery-modal-message {
+    margin: 0 22px 12px;
+    color: #7b5560 !important;
+}
+
+.battery-state-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 22px 12px;
+}
+
+.state-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid #dbe2e9;
+    border-radius: 99px;
+    background: #fff;
+    color: #34404b;
+    font-size: .82rem;
+    font-weight: 850;
+}
+
+.state-pill.charging,
+.state-pill.balancing {
+    border-color: #55b964;
+    background: #e9f8ee;
+    color: #246b3c;
+}
+
+.state-pill.discharging {
+    border-color: #ffb570;
+    background: #fff0df;
+    color: #a54f00;
+}
+
+.state-pill.idle,
+.state-pill.neutral {
+    color: #52606d;
+}
+
+.battery-detail-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 0 22px 22px;
+}
+
+.battery-detail-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border: 1px solid #dbe2e9;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.battery-detail-stage img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.battery-wire-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.battery-power-wire,
+.battery-cell-wire {
+    fill: none;
+    stroke-width: 3.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 12 9;
+    vector-effect: non-scaling-stroke;
+    opacity: .18;
+    filter: drop-shadow(0 2px 5px #ffffffcc);
+}
+
+.battery-power-wire.positive {
+    stroke: #ef4444;
+}
+
+.battery-power-wire.negative {
+    stroke: #0f172a;
+}
+
+.battery-cell-wire {
+    stroke: #ff4e77;
+    stroke-width: 1.85;
+    stroke-dasharray: 4 6;
+    opacity: .62;
+}
+
+.battery-power-wire.active {
+    opacity: .5;
+    animation: battery-wire-flow 1.2s linear infinite;
+}
+
+.battery-cell-wire.active {
+    opacity: .9;
+    animation: battery-wire-flow 1.2s linear infinite;
+}
+
+.battery-detail-stage.discharging .battery-power-wire.active {
+    animation-direction: reverse;
+}
+
+.battery-wire-dot {
+    position: absolute;
+    z-index: 2;
+    width: 7px;
+    height: 7px;
+    border: 1px solid #fff;
+    border-radius: 50%;
+    background: #ff4e77;
+    box-shadow: 0 0 0 2px #ff4e7733, 0 2px 8px #ff4e7777;
+    transform: translate(-50%, -50%);
+}
+
+.battery-cell-pin,
+.bms-module-pin {
+    position: absolute;
+    z-index: 2;
+    min-width: 88px;
+    padding: 8px 9px;
+    border: 1px solid #dce5ec;
+    border-radius: 8px;
+    background: #ffffffee;
+    box-shadow: 0 12px 26px #1b293526;
+    backdrop-filter: blur(7px);
+    transform: translate(-50%, -50%);
+}
+
+.battery-cell-pin::after,
+.bms-module-pin::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -11px;
+    width: 2px;
+    height: 11px;
+    background: #ff7a00;
+    transform: translateX(-50%);
+}
+
+.battery-cell-pin span,
+.bms-module-pin span {
+    display: block;
+    color: #34404b;
+    font-size: .68rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.battery-cell-pin strong,
+.bms-module-pin strong {
+    display: block;
+    margin-top: 3px;
+    color: #1f2937;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.battery-cell-pin small,
+.bms-module-pin small {
+    margin-top: 4px;
+    color: #ff7a00;
+    font-size: .66rem;
+    font-weight: 800;
+}
+
+.battery-cell-pin.low {
+    border-color: #f7c948;
+}
+
+.battery-cell-pin.high {
+    border-color: #55b964;
+}
+
+.battery-cell-pin.low::after {
+    background: #f7c948;
+}
+
+.battery-cell-pin.high::after {
+    background: #55b964;
+}
+
+.bms-module-pin {
+    left: 29%;
+    top: 74%;
+    min-width: 98px;
+}
+
+.bms-module-pin::after {
+    top: -11px;
+    bottom: auto;
+    background: #55b964;
+}
+
+.battery-detail-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-content: start;
+    gap: 8px;
+}
+
+.battery-detail-stats div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #dbe2e9;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.battery-detail-stats span {
+    color: #6d7a86;
+    font-size: .7rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.battery-detail-stats strong {
+    display: block;
+    margin-top: 5px;
+    color: #1f2937;
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+
 .flow-legend {
     display: flex;
     flex-wrap: wrap;
@@ -1776,6 +2105,12 @@ pre {
 @keyframes wire-flow {
     to {
         stroke-dashoffset: -28;
+    }
+}
+
+@keyframes battery-wire-flow {
+    to {
+        stroke-dashoffset: -42;
     }
 }
 
@@ -1916,6 +2251,41 @@ pre {
     .flow-legend span:last-child {
         margin-left: 0;
         flex-basis: 100%;
+    }
+
+    .battery-modal-backdrop {
+        padding: 0;
+        place-items: stretch;
+    }
+
+    .battery-modal {
+        width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+        border-inline: 0;
+    }
+
+    .battery-modal-head {
+        padding: 16px 14px 10px;
+    }
+
+    .battery-state-strip {
+        padding: 0 14px 10px;
+    }
+
+    .battery-detail-layout {
+        grid-template-columns: 1fr;
+        padding: 0 14px 16px;
+        overflow-x: auto;
+    }
+
+    .battery-detail-stage {
+        min-width: 820px;
+    }
+
+    .battery-detail-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        min-width: 0;
     }
 }
 
