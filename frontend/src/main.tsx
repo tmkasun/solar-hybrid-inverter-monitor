@@ -5,6 +5,8 @@ import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Too
 import * as THREE from "three";
 import { api } from "./api";
 import type { HistoryRequest } from "./api";
+import { createI18n, groupLabel, languageOptions, languageStorageKey, metricLabel, normalizeLanguage, settingChoiceLabel, settingDetailLabel, settingResetLabel, settingTitleLabel, settingWarningLabel, statusFlagDescription, statusFlagLabel, storedLanguage } from "./i18n";
+import type { I18n, Language, TranslationKey } from "./i18n";
 import type { BmsStatus, Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
 import "./styles.css";
 
@@ -14,6 +16,8 @@ const settingsPriorityDiagram = new URL("./assets/settings-priority-diagram.png"
 function App() {
   const routeLocation = useLocation();
   const graphFullPage = routeLocation.pathname === "/analysis/fullscreen";
+  const [language, setLanguage] = useState<Language>(() => storedLanguage());
+  const i18n = useMemo(() => createI18n(language), [language]);
   const [status, setStatus] = useState<Status | null>(null);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
@@ -26,29 +30,33 @@ function App() {
     try {
       const [nextStatus, nextCapabilities] = await Promise.all([api.status(), api.capabilities()]);
       setStatus(nextStatus); setCapabilities(nextCapabilities.capabilities); setCapabilityDiagnostics(nextCapabilities.diagnostics || {});
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to reach API"); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : i18n.t("message.unableToReachApi")); }
   };
-  useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? "Inverter setting applied." : `Command failed: ${data.data.error}`); }; return () => socket.close(); }, []);
+  useEffect(() => { localStorage.setItem(languageStorageKey, language); document.documentElement.lang = i18n.locale; }, [language, i18n.locale]);
+  useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? i18n.t("message.settingApplied") : i18n.t("message.commandFailed", { error: data.data.error })); }; return () => socket.close(); }, [i18n]);
 
-  const login = async (event: FormEvent) => { event.preventDefault(); try { await api.login(password); setAuthenticated(true); setPassword(""); setMessage("Signed in."); } catch (error) { setMessage(error instanceof Error ? error.message : "Login failed"); } };
-  const logout = async () => { await api.logout(); setAuthenticated(false); setMessage("Signed out."); };
+  const login = async (event: FormEvent) => { event.preventDefault(); try { await api.login(password); setAuthenticated(true); setPassword(""); setMessage(i18n.t("message.signedIn")); } catch (error) { setMessage(error instanceof Error ? error.message : i18n.t("message.loginFailed")); } };
+  const logout = async () => { await api.logout(); setAuthenticated(false); setMessage(i18n.t("message.signedOut")); };
   const currentSettings = useMemo(() => currentPrioritySettings(capabilityDiagnostics), [capabilityDiagnostics]);
   const applySetting = async (key: string, value: string) => {
-    const label = settingDisplayLabel(key, value);
+    const label = settingDisplayLabel(key, value, i18n);
     setPendingSetting({ key, value });
     try {
       await api.change(key, value);
       await load();
-      setMessage(`${settingTitle(key)} updated to ${label}.`);
+      setMessage(i18n.t("message.settingUpdated", { setting: settingTitle(key, i18n), value: label }));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Change failed");
+      setMessage(e instanceof Error ? e.message : i18n.t("message.changeFailed"));
     } finally {
       setPendingSetting(null);
     }
   };
   const resetDefaults = async () => {
     const defaults = Object.entries(factorySafeDefaults);
-    if (!window.confirm(`Reset to factory-safe defaults?\n\nOutput source priority: ${settingDisplayLabel("output_source_priority", factorySafeDefaults.output_source_priority)}\nCharger source priority: ${settingDisplayLabel("charger_source_priority", factorySafeDefaults.charger_source_priority)}`)) return;
+    if (!window.confirm(i18n.t("confirm.resetDefaults", {
+      output: settingDisplayLabel("output_source_priority", factorySafeDefaults.output_source_priority, i18n),
+      charger: settingDisplayLabel("charger_source_priority", factorySafeDefaults.charger_source_priority, i18n),
+    }))) return;
     try {
       for (const [key, value] of defaults) {
         if (currentSettings[key] === value) continue;
@@ -56,51 +64,55 @@ function App() {
         await api.change(key, value);
       }
       await load();
-      setMessage("Factory-safe defaults applied.");
+      setMessage(i18n.t("message.defaultsApplied"));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Reset failed");
+      setMessage(e instanceof Error ? e.message : i18n.t("message.resetFailed"));
     } finally {
       setPendingSetting(null);
     }
   };
 
   return <main className={graphFullPage ? "full-page-shell" : ""}>
-    {!graphFullPage && <header><div><h1>Sako Energy</h1><p>Local inverter monitoring and control</p></div><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? "Inverter connected" : "Inverter offline"}</div></header>}
-    {!graphFullPage && <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{route.label}</NavLink>)}</nav>}
+    {!graphFullPage && <header><div><h1>Sako Energy</h1><p>{i18n.t("app.tagline")}</p></div><div className="header-actions"><label className="language-select"><span>{i18n.t("language.label")}</span><select value={language} onChange={event => setLanguage(normalizeLanguage(event.target.value))}>{languageOptions.map(option => <option key={option.value} value={option.value}>{option.nativeLabel}</option>)}</select></label><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? i18n.t("connection.connected") : i18n.t("connection.offline")}</div></div></header>}
+    {!graphFullPage && <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{i18n.t(route.labelKey)}</NavLink>)}</nav>}
     {message && <div className="notice">{message}<button onClick={() => setMessage("")}>×</button></div>}
     <Routes>
       <Route path="/" element={<Navigate to="/overview" replace />} />
-      <Route path="/overview" element={<Overview status={status} />} />
-      <Route path="/analysis" element={<DataAnalysis />} />
-      <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage />} />
-      <Route path="/settings" element={<Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} />} />
-      <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} />} />
+      <Route path="/overview" element={<Overview status={status} i18n={i18n} />} />
+      <Route path="/analysis" element={<DataAnalysis i18n={i18n} />} />
+      <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage i18n={i18n} />} />
+      <Route path="/settings" element={<Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} i18n={i18n} />} />
+      <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} i18n={i18n} />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
   </main>;
 }
 
 const appRoutes = [
-  { path: "/overview", label: "overview" },
-  { path: "/analysis", label: "analysis" },
-  { path: "/settings", label: "settings" },
-  { path: "/diagnostics", label: "diagnostics" },
-];
+  { path: "/overview", labelKey: "route.overview" },
+  { path: "/analysis", labelKey: "route.analysis" },
+  { path: "/settings", labelKey: "route.settings" },
+  { path: "/diagnostics", labelKey: "route.diagnostics" },
+] satisfies Array<{ path: string; labelKey: TranslationKey }>;
 
-function Overview({ status }: { status: Status | null }) {
+type I18nProps = {
+  i18n: I18n;
+};
+
+function Overview({ status, i18n }: { status: Status | null } & I18nProps) {
   const values: StatusValues = status?.status || {};
   const activeFlags = values.status_flags?.filter(flag => flag.active) || [];
   const [batteryDetailOpen, setBatteryDetailOpen] = useState(false);
   const now = useNow(1000);
-  return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} onBatteryOpen={() => setBatteryDetailOpen(true)} />
-    <EnergyOverview values={values} connected={Boolean(status?.connected)} />
-    <BmsCellHealth bms={status?.bms} />
-    <div className="panel details"><h2>Current state</h2><p>Mode: <b>{status?.mode || "—"}</b> · Last update: {formatLastUpdate(status?.captured_at, now)}</p><p>Battery source: <b>{batterySourceLabel(values.battery_source, status?.bms)}</b></p>{activeFlags.length > 0 && <p>Status: {activeFlags.map(flag => <span key={flag.key} title={flag.description}><b>{flag.label}</b>{" "}</span>)}</p>}{status?.warnings && <p>Warnings: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
-    {batteryDetailOpen && <BatteryDetailModal values={values} bms={status?.bms} onClose={() => setBatteryDetailOpen(false)} />}
+  return <section><EnergyFlow values={values} connected={Boolean(status?.connected)} onBatteryOpen={() => setBatteryDetailOpen(true)} i18n={i18n} />
+    <EnergyOverview values={values} connected={Boolean(status?.connected)} i18n={i18n} />
+    <BmsCellHealth bms={status?.bms} i18n={i18n} />
+    <div className="panel details"><h2>{i18n.t("overview.currentState")}</h2><p>{i18n.t("overview.mode")}: <b>{formatInverterMode(status?.mode, i18n)}</b> · {i18n.t("overview.lastUpdate")}: {formatLastUpdate(status?.captured_at, now, i18n)}</p><p>{i18n.t("overview.batterySource")}: <b>{batterySourceLabel(values.battery_source, status?.bms, i18n)}</b></p>{activeFlags.length > 0 && <p>{i18n.t("overview.status")}: {activeFlags.map(flag => <span key={flag.key} title={statusFlagDescription(i18n, flag.key, flag.description)}><b>{statusFlagLabel(i18n, flag.key, flag.label)}</b>{" "}</span>)}</p>}{status?.warnings && <p>{i18n.t("overview.warnings")}: <code>{status.warnings}</code></p>}{status?.error && <p className="error">{status.error}</p>}</div>
+    {batteryDetailOpen && <BatteryDetailModal values={values} bms={status?.bms} onClose={() => setBatteryDetailOpen(false)} i18n={i18n} />}
   </section>;
 }
 
-function DataAnalysis({ fullPage = false }: { fullPage?: boolean }) {
+function DataAnalysis({ fullPage = false, i18n }: { fullPage?: boolean } & I18nProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const searchKey = searchParams.toString();
   const analysisState = useMemo(() => parseAnalysisQuery(searchParams), [searchKey]);
@@ -124,13 +136,14 @@ function DataAnalysis({ fullPage = false }: { fullPage?: boolean }) {
   const historyRequestRef = useRef(historyRequest);
   historyRequestRef.current = historyRequest;
   const enrichedSamples = useMemo(() => samples.map(enrichSample), [samples]);
-  const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, analysisState.range) })), [enrichedSamples, historyKey]);
+  const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, analysisState.range, i18n) })), [enrichedSamples, historyKey, i18n]);
   const stats = useMemo(() => selectedMetrics.map(metric => metricStats(metric, enrichedSamples)), [selectedMetrics, enrichedSamples]);
-  const rawRows = useMemo(() => sortedFilteredRows(enrichedSamples, selectedMetrics, rawFilter, rawSort), [enrichedSamples, selectedMetrics, rawFilter, rawSort]);
+  const rawRows = useMemo(() => sortedFilteredRows(enrichedSamples, selectedMetrics, rawFilter, rawSort, i18n), [enrichedSamples, selectedMetrics, rawFilter, rawSort, i18n]);
   const zoomed = Boolean(zoomRange && chartData.length > 0 && (zoomRange.startIndex > 0 || zoomRange.endIndex < chartData.length - 1));
   const activeZoomRange = zoomRange && chartData.length > 0 ? clampZoomRange(zoomRange, chartData.length) : null;
-  const zoomLabel = activeZoomRange ? zoomRangeLabel(chartData, activeZoomRange) : "Full selected range";
-  const customRangeError = customDateRangeError(customStart, customEnd);
+  const activeGroupLabel = groupLabel(i18n, activeGroup.id);
+  const zoomLabel = activeZoomRange ? zoomRangeLabel(chartData, activeZoomRange, i18n) : i18n.t("analysis.fullRange");
+  const customRangeError = customDateRangeError(customStart, customEnd, i18n);
   const fullPagePath = pathWithSearch("/analysis/fullscreen", searchParams);
   const analysisPath = pathWithSearch("/analysis", searchParams);
 
@@ -149,14 +162,14 @@ function DataAnalysis({ fullPage = false }: { fullPage?: boolean }) {
           setSamples(history.samples);
           setError("");
         } catch (e) {
-          setError(e instanceof Error ? e.message : "Unable to load telemetry history");
+          setError(e instanceof Error ? e.message : i18n.t("analysis.loadError"));
         }
       } while (historyLoadQueued.current);
     } finally {
       historyLoadInFlight.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [i18n]);
   useEffect(() => { void loadHistory(); }, [historyKey, loadHistory]);
   useEffect(() => { localStorage.setItem(autoRefreshEnabledStorageKey, String(autoRefreshEnabled)); }, [autoRefreshEnabled]);
   useEffect(() => { localStorage.setItem(autoRefreshIntervalStorageKey, String(autoRefreshIntervalMs)); }, [autoRefreshIntervalMs]);
@@ -199,51 +212,51 @@ function DataAnalysis({ fullPage = false }: { fullPage?: boolean }) {
 
   return <section className={fullPage ? "analysis-page fullscreen" : "analysis-page"}>
     <div className="section-title">
-      <div><h2>{fullPage ? `${activeGroup.label} trend` : "Data analysis"}</h2><p>{fullPage ? `${samples.length} samples · ${timeRangeLabel(analysisState.range)} · ${zoomLabel}` : "Compare inverter telemetry by parameter group and time range."}</p></div>
+      <div><h2>{fullPage ? i18n.t("analysis.trend", { group: activeGroupLabel }) : i18n.t("analysis.title")}</h2><p>{fullPage ? i18n.t("analysis.samplesSummary", { samples: samples.length, range: timeRangeLabel(analysisState.range, i18n), zoom: zoomLabel }) : i18n.t("analysis.subtitle")}</p></div>
       <div className="analysis-actions">
-        <label className={autoRefreshEnabled ? "auto-refresh-toggle active" : "auto-refresh-toggle"}><input type="checkbox" checked={autoRefreshEnabled} onChange={event => setAutoRefreshEnabled(event.target.checked)} /><span>Auto refresh</span></label>
-        <select aria-label="Auto refresh interval" value={autoRefreshIntervalMs} disabled={!autoRefreshEnabled} onChange={event => setAutoRefreshIntervalMs(Number(event.target.value))}>{autoRefreshIntervals.map(interval => <option key={interval.ms} value={interval.ms}>{interval.label}</option>)}</select>
-        <button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? "Loading..." : "Refresh"}</button>
-        {fullPage && <Link className="button-link quiet" to={analysisPath}>Back</Link>}
+        <label className={autoRefreshEnabled ? "auto-refresh-toggle active" : "auto-refresh-toggle"}><input type="checkbox" checked={autoRefreshEnabled} onChange={event => setAutoRefreshEnabled(event.target.checked)} /><span>{i18n.t("analysis.autoRefresh")}</span></label>
+        <select aria-label={i18n.t("analysis.autoRefreshInterval")} value={autoRefreshIntervalMs} disabled={!autoRefreshEnabled} onChange={event => setAutoRefreshIntervalMs(Number(event.target.value))}>{autoRefreshIntervals.map(interval => <option key={interval.ms} value={interval.ms}>{i18n.t(interval.labelKey)}</option>)}</select>
+        <button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? i18n.t("analysis.loading") : i18n.t("analysis.refresh")}</button>
+        {fullPage && <Link className="button-link quiet" to={analysisPath}>{i18n.t("analysis.back")}</Link>}
       </div>
     </div>
     <div className="analysis-controls panel">
-      <div><span>Range</span><div className="segmented">{timeRanges.map(range => <button key={range.hours} className={analysisState.range.mode === "preset" && analysisState.range.hours === range.hours ? "active" : ""} onClick={() => selectPresetRange(range)}>{range.label}</button>)}</div>
+      <div><span>{i18n.t("analysis.range")}</span><div className="segmented">{timeRanges.map(range => <button key={range.hours} className={analysisState.range.mode === "preset" && analysisState.range.hours === range.hours ? "active" : ""} onClick={() => selectPresetRange(range)}>{range.param}</button>)}</div>
         <div className="custom-range">
-          <label><span>Start</span><input type="datetime-local" value={customStart} onChange={event => setCustomStart(event.target.value)} /></label>
-          <label><span>End</span><input type="datetime-local" value={customEnd} onChange={event => setCustomEnd(event.target.value)} /></label>
-          <button className={analysisState.range.mode === "custom" ? "active" : ""} disabled={!customStart || !customEnd || Boolean(customRangeError)} onClick={applyCustomRange}>Apply</button>
+          <label><span>{i18n.t("analysis.start")}</span><input type="datetime-local" value={customStart} onChange={event => setCustomStart(event.target.value)} /></label>
+          <label><span>{i18n.t("analysis.end")}</span><input type="datetime-local" value={customEnd} onChange={event => setCustomEnd(event.target.value)} /></label>
+          <button className={analysisState.range.mode === "custom" ? "active" : ""} disabled={!customStart || !customEnd || Boolean(customRangeError)} onClick={applyCustomRange}>{i18n.t("analysis.apply")}</button>
         </div>
         {customRangeError && <small className="custom-range-error">{customRangeError}</small>}
       </div>
-      <div><span>Parameter type</span><div className="segmented metric-groups">{metricGroups.map(group => <button key={group.id} className={analysisState.activeGroupId === group.id ? "active" : ""} onClick={() => selectGroup(group)}>{group.label}</button>)}</div></div>
-      <div><span>Parameters</span><div className="metric-toggles">{activeGroup.metricIds.map(id => {
+      <div><span>{i18n.t("analysis.parameterType")}</span><div className="segmented metric-groups">{metricGroups.map(group => <button key={group.id} className={analysisState.activeGroupId === group.id ? "active" : ""} onClick={() => selectGroup(group)}>{groupLabel(i18n, group.id)}</button>)}</div></div>
+      <div><span>{i18n.t("analysis.parameters")}</span><div className="metric-toggles">{activeGroup.metricIds.map(id => {
         const metric = metricDefinitions[id];
         const checked = analysisState.selectedMetricIds.includes(id);
-        return <label key={id} className={checked ? "checked" : ""}><input type="checkbox" checked={checked} onChange={() => toggleMetric(id)} /> <i style={{ background: metric.color }} />{metric.label}</label>;
+        return <label key={id} className={checked ? "checked" : ""}><input type="checkbox" checked={checked} onChange={() => toggleMetric(id)} /> <i style={{ background: metric.color }} />{metricLabel(i18n, metric.id)}</label>;
       })}</div></div>
     </div>
     {error && <p className="error">{error}</p>}
-    {!fullPage && <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{stat.metric.label}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>Avg {formatMetricValue(stat.metric, stat.average)} · Min {formatMetricValue(stat.metric, stat.min)} · Max {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>}
-    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{activeGroup.label} trend</h3><span>{samples.length} samples · {timeRangeLabel(analysisState.range)} · {zoomLabel}</span></div><div className="analysis-panel-actions"><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>Reset zoom</button>{!fullPage && <Link className="button-link quiet" to={fullPagePath}>Full page</Link>}</div></div>
-      {loading && samples.length === 0 ? <div className="empty-chart">Loading telemetry history...</div> : chartData.length === 0 ? <div className="empty-chart">No telemetry samples found for this range.</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/><Tooltip formatter={(value, name) => {
+    {!fullPage && <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{metricLabel(i18n, stat.metric.id)}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>{i18n.t("analysis.avg")} {formatMetricValue(stat.metric, stat.average)} · {i18n.t("analysis.min")} {formatMetricValue(stat.metric, stat.min)} · {i18n.t("analysis.max")} {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>}
+    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{i18n.t("analysis.trend", { group: activeGroupLabel })}</h3><span>{i18n.t("analysis.samplesSummary", { samples: samples.length, range: timeRangeLabel(analysisState.range, i18n), zoom: zoomLabel })}</span></div><div className="analysis-panel-actions"><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>{i18n.t("analysis.resetZoom")}</button>{!fullPage && <Link className="button-link quiet" to={fullPagePath}>{i18n.t("analysis.fullPage")}</Link>}</div></div>
+      {loading && samples.length === 0 ? <div className="empty-chart">{i18n.t("analysis.loadingHistory")}</div> : chartData.length === 0 ? <div className="empty-chart">{i18n.t("analysis.noSamples")}</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/><Tooltip formatter={(value, name) => {
         const metric = metricDefinitions[String(name)];
-        return [metric ? formatMetricValue(metric, value as number) : value, metric?.label || name];
-      }} /><Legend formatter={(value) => metricDefinitions[String(value)]?.label || value} />{selectedMetrics.map(metric => <Line key={metric.id} type="monotone" dataKey={metric.id} stroke={metric.color} dot={false} strokeWidth={2.4} connectNulls />)}<Brush dataKey="at" height={32} stroke="#55b964" fill="#10202a" travellerWidth={12} startIndex={activeZoomRange?.startIndex ?? 0} endIndex={activeZoomRange?.endIndex ?? chartData.length - 1} onChange={range => setZoomRange(normalizeZoomRange(range, chartData.length))} /></LineChart></ResponsiveContainer></div>}
+        return [metric ? formatMetricValue(metric, value as number) : value, metric ? metricLabel(i18n, metric.id) : name];
+      }} /><Legend formatter={(value) => metricDefinitions[String(value)] ? metricLabel(i18n, String(value)) : value} />{selectedMetrics.map(metric => <Line key={metric.id} type="monotone" dataKey={metric.id} stroke={metric.color} dot={false} strokeWidth={2.4} connectNulls />)}<Brush dataKey="at" height={32} stroke="#55b964" fill="#10202a" travellerWidth={12} startIndex={activeZoomRange?.startIndex ?? 0} endIndex={activeZoomRange?.endIndex ?? chartData.length - 1} onChange={range => setZoomRange(normalizeZoomRange(range, chartData.length))} /></LineChart></ResponsiveContainer></div>}
     </div>
-    {!fullPage && <details className="panel analysis-table-panel" open={rawDataOpen} onToggle={event => setRawDataOpen(event.currentTarget.open)}><summary><span>Raw telemetry data</span><small>{rawDataOpen ? `${rawRows.length} of ${samples.length} rows` : "Collapsed by default"}</small></summary>
+    {!fullPage && <details className="panel analysis-table-panel" open={rawDataOpen} onToggle={event => setRawDataOpen(event.currentTarget.open)}><summary><span>{i18n.t("analysis.rawData")}</span><small>{rawDataOpen ? i18n.t("analysis.rowsOpen", { rows: rawRows.length, samples: samples.length }) : i18n.t("analysis.collapsed")}</small></summary>
       <div className="raw-data-tools">
-        <label><span>Filter</span><input value={rawFilter} onChange={event => setRawFilter(event.target.value)} placeholder="Time or value" /></label>
-        <label><span>Sort by</span><select value={rawSort.key} onChange={event => setRawSort(current => ({ ...current, key: event.target.value }))}><option value="captured_at">Captured time</option>{selectedMetrics.map(metric => <option key={metric.id} value={metric.id}>{metric.label}</option>)}</select></label>
-        <label><span>Direction</span><select value={rawSort.direction} onChange={event => setRawSort(current => ({ ...current, direction: event.target.value as SortDirection }))}><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>
-        {(rawFilter || rawSort.key !== "captured_at" || rawSort.direction !== "desc") && <button className="quiet" onClick={() => { setRawFilter(""); setRawSort({ key: "captured_at", direction: "desc" }); }}>Clear</button>}
+        <label><span>{i18n.t("analysis.filter")}</span><input value={rawFilter} onChange={event => setRawFilter(event.target.value)} placeholder={i18n.t("analysis.filterPlaceholder")} /></label>
+        <label><span>{i18n.t("analysis.sortBy")}</span><select value={rawSort.key} onChange={event => setRawSort(current => ({ ...current, key: event.target.value }))}><option value="captured_at">{i18n.t("analysis.capturedTime")}</option>{selectedMetrics.map(metric => <option key={metric.id} value={metric.id}>{metricLabel(i18n, metric.id)}</option>)}</select></label>
+        <label><span>{i18n.t("analysis.direction")}</span><select value={rawSort.direction} onChange={event => setRawSort(current => ({ ...current, direction: event.target.value as SortDirection }))}><option value="desc">{i18n.t("analysis.descending")}</option><option value="asc">{i18n.t("analysis.ascending")}</option></select></label>
+        {(rawFilter || rawSort.key !== "captured_at" || rawSort.direction !== "desc") && <button className="quiet" onClick={() => { setRawFilter(""); setRawSort({ key: "captured_at", direction: "desc" }); }}>{i18n.t("analysis.clear")}</button>}
       </div>
-      {rawRows.length === 0 ? <p>No telemetry rows match the current filter.</p> : <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>Captured</th>{selectedMetrics.map(metric => <th key={metric.id}>{metric.label}</th>)}</tr></thead><tbody>{rawRows.map(row => <tr key={row.captured_at}><td>{formatDate(row.captured_at)}</td>{selectedMetrics.map(metric => <td key={metric.id}>{formatMetricValue(metric, metricValue(row, metric.id))}</td>)}</tr>)}</tbody></table></div>}
+      {rawRows.length === 0 ? <p>{i18n.t("analysis.noRows")}</p> : <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>{i18n.t("analysis.captured")}</th>{selectedMetrics.map(metric => <th key={metric.id}>{metricLabel(i18n, metric.id)}</th>)}</tr></thead><tbody>{rawRows.map(row => <tr key={row.captured_at}><td>{formatDate(row.captured_at, i18n)}</td>{selectedMetrics.map(metric => <td key={metric.id}>{formatMetricValue(metric, metricValue(row, metric.id))}</td>)}</tr>)}</tbody></table></div>}
     </details>}
   </section>;
 }
 
-function EnergyOverview({ values, connected }: { values: StatusValues; connected: boolean }) {
+function EnergyOverview({ values, connected, i18n }: { values: StatusValues; connected: boolean } & I18nProps) {
   const loadPower = numeric(values.output_active_power_w);
   const chargePower = numeric(values.battery_voltage) * numeric(values.battery_charge_current);
   const dischargePower = numeric(values.battery_voltage) * numeric(values.battery_discharge_current);
@@ -254,16 +267,16 @@ function EnergyOverview({ values, connected }: { values: StatusValues; connected
   const gridPower = Math.max(0, loadPower + Math.max(0, batteryPower) - pvPower - Math.max(0, -batteryPower));
   const gridActive = gridPower > 1;
   const batteryPercent = Math.min(100, Math.max(0, numeric(values.battery_capacity_percent)));
-  const gridDirection = gridActive ? "Importing" : "Standby";
+  const gridDirection = gridActive ? i18n.t("state.importing") : i18n.t("state.standby");
 
-  return <aside className="overview-card overview-below" aria-label="Energy overview">
-    <div className="overview-head"><h3>Overview</h3><span className={connected ? "live on" : "live"}>{connected ? "Live" : "Offline"}</span></div>
-    <OverviewRow icon="panel" label="PV Input" value={`${display(values.pv_input_voltage, " V")} · ${display(values.pv_input_current, " A")}`} compact />
-    <OverviewRow icon="battery" label="Battery SOC" value={`${batteryPercent.toFixed(0)}%`} progress={batteryPercent} />
-    <OverviewRow icon="home" label="Home Load" value={loadPower > 1 ? watts(loadPower) : "0 W"} />
-    <OverviewRow icon="tower" label="Grid" value={gridActive ? watts(gridPower) : "0 W"} note={`${gridDirection} · ${display(values.grid_voltage, " V", 0)} · ${display(values.grid_frequency, " Hz")}`} />
-    <OverviewRow icon="pulse" label="Battery Current" value={`${display(values.battery_charge_current, " A", 0)} / ${display(values.battery_discharge_current, " A", 0)}`} note="charge / discharge" compact />
-    <OverviewRow icon="temp" label="Inverter Temp" value={display(values.inverter_temperature_c, "°C")} />
+  return <aside className="overview-card overview-below" aria-label={i18n.t("overview.energyOverview")}>
+    <div className="overview-head"><h3>{i18n.t("overview.title")}</h3><span className={connected ? "live on" : "live"}>{connected ? i18n.t("status.live") : i18n.t("status.offline")}</span></div>
+    <OverviewRow icon="panel" label={i18n.t("overview.pvInput")} value={`${display(values.pv_input_voltage, " V")} · ${display(values.pv_input_current, " A")}`} compact />
+    <OverviewRow icon="battery" label={i18n.t("overview.batterySoc")} value={`${batteryPercent.toFixed(0)}%`} progress={batteryPercent} />
+    <OverviewRow icon="home" label={i18n.t("overview.homeLoad")} value={loadPower > 1 ? watts(loadPower) : "0 W"} />
+    <OverviewRow icon="tower" label={i18n.t("overview.grid")} value={gridActive ? watts(gridPower) : "0 W"} note={`${gridDirection} · ${display(values.grid_voltage, " V", 0)} · ${display(values.grid_frequency, " Hz")}`} />
+    <OverviewRow icon="pulse" label={i18n.t("overview.batteryCurrent")} value={`${display(values.battery_charge_current, " A", 0)} / ${display(values.battery_discharge_current, " A", 0)}`} note={i18n.t("overview.chargeDischarge")} compact />
+    <OverviewRow icon="temp" label={i18n.t("overview.inverterTemp")} value={display(values.inverter_temperature_c, "°C")} />
   </aside>;
 }
 
@@ -275,17 +288,6 @@ const display = (value: number | string | null | undefined, unit = "", digits = 
   if (!Number.isFinite(amount)) return "—";
   return `${amount.toFixed(digits)}${unit}`;
 };
-const relativeTimeFormatter = new Intl.RelativeTimeFormat([], { numeric: "always" });
-const relativeTimeUnits: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-  ["year", 31_536_000],
-  ["month", 2_592_000],
-  ["week", 604_800],
-  ["day", 86_400],
-  ["hour", 3_600],
-  ["minute", 60],
-  ["second", 1],
-];
-
 function useNow(intervalMs: number) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -295,27 +297,20 @@ function useNow(intervalMs: number) {
   return now;
 }
 
-function formatLastUpdate(value: string | null | undefined, now: number) {
+function formatLastUpdate(value: string | null | undefined, now: number, i18n: I18n) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return `${formatRelativeTime(date.getTime(), now)} (${date.toLocaleString()})`;
+  return `${i18n.relativeTime(date.getTime(), now)} (${date.toLocaleString(i18n.locale)})`;
 }
 
-function formatRelativeTime(time: number, now: number) {
-  const diffSeconds = Math.round((time - now) / 1000);
-  const absSeconds = Math.abs(diffSeconds);
-  const [unit, secondsPerUnit] = relativeTimeUnits.find(([, seconds]) => absSeconds >= seconds) || ["second", 1];
-  return relativeTimeFormatter.format(Math.round(diffSeconds / secondsPerUnit), unit);
-}
-
-type MetricDefinition = { id: string; source?: string; label: string; unit: string; digits: number; color: string };
-type MetricGroup = { id: string; label: string; metricIds: string[]; defaultMetricIds: string[] };
+type MetricDefinition = { id: string; source?: string; unit: string; digits: number; color: string };
+type MetricGroup = { id: string; metricIds: string[]; defaultMetricIds: string[] };
 type AnalysisSample = HistorySample & Record<string, HistoryValue>;
 type ChartZoomRange = { startIndex: number; endIndex: number };
 type SortDirection = "asc" | "desc";
 type RawSort = { key: string; direction: SortDirection };
-type TimeRange = { label: string; param: string; hours: number };
+type TimeRange = { param: string; hours: number };
 type AnalysisRangeState = { mode: "preset"; hours: number; param: string } | { mode: "custom"; start: string; end: string };
 type AnalysisUrlState = { activeGroupId: string; selectedMetricIds: string[]; range: AnalysisRangeState };
 
@@ -323,51 +318,51 @@ const bmsCellColors = ["#84cc16", "#06b6d4", "#f59e0b", "#a78bfa", "#22c55e", "#
 const bmsCellMetricDefinitions: Record<string, MetricDefinition> = Object.fromEntries(
   Array.from({ length: 8 }, (_, index) => {
     const cell = index + 1;
-    return [`bms_cell_${String(cell).padStart(2, "0")}_voltage`, { id: `bms_cell_${String(cell).padStart(2, "0")}_voltage`, label: `Cell ${cell}`, unit: " V", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
+    return [`bms_cell_${String(cell).padStart(2, "0")}_voltage`, { id: `bms_cell_${String(cell).padStart(2, "0")}_voltage`, unit: " V", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
   })
 );
 const bmsCellResistanceMetricDefinitions: Record<string, MetricDefinition> = Object.fromEntries(
   Array.from({ length: 8 }, (_, index) => {
     const cell = index + 1;
-    return [`bms_cell_${String(cell).padStart(2, "0")}_resistance_mohm`, { id: `bms_cell_${String(cell).padStart(2, "0")}_resistance_mohm`, label: `Cell ${cell} resistance`, unit: " mΩ", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
+    return [`bms_cell_${String(cell).padStart(2, "0")}_resistance_mohm`, { id: `bms_cell_${String(cell).padStart(2, "0")}_resistance_mohm`, unit: " mΩ", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
   })
 );
 const bmsCellWireResistanceMetricDefinitions: Record<string, MetricDefinition> = Object.fromEntries(
   Array.from({ length: 8 }, (_, index) => {
     const cell = index + 1;
-    return [`bms_cell_${String(cell).padStart(2, "0")}_wire_resistance_mohm`, { id: `bms_cell_${String(cell).padStart(2, "0")}_wire_resistance_mohm`, label: `Cell ${cell} wire`, unit: " mΩ", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
+    return [`bms_cell_${String(cell).padStart(2, "0")}_wire_resistance_mohm`, { id: `bms_cell_${String(cell).padStart(2, "0")}_wire_resistance_mohm`, unit: " mΩ", digits: 3, color: bmsCellColors[index % bmsCellColors.length] }];
   })
 );
 
 const metricDefinitions: Record<string, MetricDefinition> = {
-  battery_voltage: { id: "battery_voltage", label: "Battery voltage", unit: " V", digits: 1, color: "#f7c948" },
-  pv_input_voltage: { id: "pv_input_voltage", label: "PV voltage", unit: " V", digits: 1, color: "#50c878" },
-  grid_voltage: { id: "grid_voltage", label: "Grid voltage", unit: " V", digits: 1, color: "#7dd3fc" },
-  output_voltage: { id: "output_voltage", label: "Output voltage", unit: " V", digits: 1, color: "#c084fc" },
-  output_active_power_w: { id: "output_active_power_w", label: "Output power", unit: " W", digits: 0, color: "#fb923c" },
-  output_apparent_power_va: { id: "output_apparent_power_va", label: "Apparent power", unit: " VA", digits: 0, color: "#f472b6" },
-  pv_power_w: { id: "pv_power_w", label: "PV power", unit: " W", digits: 0, color: "#22c55e" },
-  battery_capacity_percent: { id: "battery_capacity_percent", label: "Battery SOC", unit: "%", digits: 0, color: "#a3e635" },
-  battery_charge_current: { id: "battery_charge_current", label: "Charge current", unit: " A", digits: 0, color: "#14b8a6" },
-  battery_discharge_current: { id: "battery_discharge_current", label: "Discharge current", unit: " A", digits: 0, color: "#f97316" },
-  pv_input_current: { id: "pv_input_current", label: "PV current", unit: " A", digits: 1, color: "#86efac" },
-  grid_frequency: { id: "grid_frequency", label: "Grid frequency", unit: " Hz", digits: 1, color: "#38bdf8" },
-  load_percent: { id: "load_percent", label: "Load", unit: "%", digits: 0, color: "#facc15" },
-  inverter_temperature_c: { id: "inverter_temperature_c", label: "Inverter temp", unit: "°C", digits: 1, color: "#ef4444" },
-  bms_battery_voltage: { id: "bms_battery_voltage", label: "BMS voltage", unit: " V", digits: 2, color: "#f7c948" },
-  bms_current_a: { id: "bms_current_a", label: "BMS current", unit: " A", digits: 2, color: "#14b8a6" },
-  bms_power_w: { id: "bms_power_w", label: "BMS power", unit: " W", digits: 0, color: "#fb923c" },
-  bms_capacity_percent: { id: "bms_capacity_percent", label: "BMS SOC", unit: "%", digits: 0, color: "#a3e635" },
-  bms_delta_cell_voltage: { id: "bms_delta_cell_voltage", label: "Cell delta", unit: " V", digits: 3, color: "#f97316" },
-  bms_min_cell_voltage: { id: "bms_min_cell_voltage", label: "Min cell", unit: " V", digits: 3, color: "#60a5fa" },
-  bms_max_cell_voltage: { id: "bms_max_cell_voltage", label: "Max cell", unit: " V", digits: 3, color: "#c084fc" },
-  bms_balance_current_a: { id: "bms_balance_current_a", label: "Balance current", unit: " A", digits: 2, color: "#2dd4bf" },
-  bms_battery_t1_c: { id: "bms_battery_t1_c", label: "Battery T1", unit: "°C", digits: 1, color: "#f87171" },
-  bms_battery_t2_c: { id: "bms_battery_t2_c", label: "Battery T2", unit: "°C", digits: 1, color: "#fb7185" },
-  bms_mos_temperature_c: { id: "bms_mos_temperature_c", label: "MOS temp", unit: "°C", digits: 1, color: "#ef4444" },
-  bms_remaining_capacity_ah: { id: "bms_remaining_capacity_ah", label: "Remaining Ah", unit: " Ah", digits: 1, color: "#99f6e4" },
-  bms_nominal_capacity_ah: { id: "bms_nominal_capacity_ah", label: "Nominal Ah", unit: " Ah", digits: 1, color: "#bfdbfe" },
-  bms_cycle_count: { id: "bms_cycle_count", label: "Cycles", unit: "", digits: 0, color: "#fde047" },
+  battery_voltage: { id: "battery_voltage", unit: " V", digits: 1, color: "#f7c948" },
+  pv_input_voltage: { id: "pv_input_voltage", unit: " V", digits: 1, color: "#50c878" },
+  grid_voltage: { id: "grid_voltage", unit: " V", digits: 1, color: "#7dd3fc" },
+  output_voltage: { id: "output_voltage", unit: " V", digits: 1, color: "#c084fc" },
+  output_active_power_w: { id: "output_active_power_w", unit: " W", digits: 0, color: "#fb923c" },
+  output_apparent_power_va: { id: "output_apparent_power_va", unit: " VA", digits: 0, color: "#f472b6" },
+  pv_power_w: { id: "pv_power_w", unit: " W", digits: 0, color: "#22c55e" },
+  battery_capacity_percent: { id: "battery_capacity_percent", unit: "%", digits: 0, color: "#a3e635" },
+  battery_charge_current: { id: "battery_charge_current", unit: " A", digits: 0, color: "#14b8a6" },
+  battery_discharge_current: { id: "battery_discharge_current", unit: " A", digits: 0, color: "#f97316" },
+  pv_input_current: { id: "pv_input_current", unit: " A", digits: 1, color: "#86efac" },
+  grid_frequency: { id: "grid_frequency", unit: " Hz", digits: 1, color: "#38bdf8" },
+  load_percent: { id: "load_percent", unit: "%", digits: 0, color: "#facc15" },
+  inverter_temperature_c: { id: "inverter_temperature_c", unit: "°C", digits: 1, color: "#ef4444" },
+  bms_battery_voltage: { id: "bms_battery_voltage", unit: " V", digits: 2, color: "#f7c948" },
+  bms_current_a: { id: "bms_current_a", unit: " A", digits: 2, color: "#14b8a6" },
+  bms_power_w: { id: "bms_power_w", unit: " W", digits: 0, color: "#fb923c" },
+  bms_capacity_percent: { id: "bms_capacity_percent", unit: "%", digits: 0, color: "#a3e635" },
+  bms_delta_cell_voltage: { id: "bms_delta_cell_voltage", unit: " V", digits: 3, color: "#f97316" },
+  bms_min_cell_voltage: { id: "bms_min_cell_voltage", unit: " V", digits: 3, color: "#60a5fa" },
+  bms_max_cell_voltage: { id: "bms_max_cell_voltage", unit: " V", digits: 3, color: "#c084fc" },
+  bms_balance_current_a: { id: "bms_balance_current_a", unit: " A", digits: 2, color: "#2dd4bf" },
+  bms_battery_t1_c: { id: "bms_battery_t1_c", unit: "°C", digits: 1, color: "#f87171" },
+  bms_battery_t2_c: { id: "bms_battery_t2_c", unit: "°C", digits: 1, color: "#fb7185" },
+  bms_mos_temperature_c: { id: "bms_mos_temperature_c", unit: "°C", digits: 1, color: "#ef4444" },
+  bms_remaining_capacity_ah: { id: "bms_remaining_capacity_ah", unit: " Ah", digits: 1, color: "#99f6e4" },
+  bms_nominal_capacity_ah: { id: "bms_nominal_capacity_ah", unit: " Ah", digits: 1, color: "#bfdbfe" },
+  bms_cycle_count: { id: "bms_cycle_count", unit: "", digits: 0, color: "#fde047" },
   ...bmsCellMetricDefinitions,
   ...bmsCellResistanceMetricDefinitions,
   ...bmsCellWireResistanceMetricDefinitions,
@@ -377,25 +372,25 @@ const bmsCellMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${Str
 const bmsCellResistanceMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${String(index + 1).padStart(2, "0")}_resistance_mohm`);
 const bmsCellWireResistanceMetricIds = Array.from({ length: 8 }, (_, index) => `bms_cell_${String(index + 1).padStart(2, "0")}_wire_resistance_mohm`);
 const metricGroups: MetricGroup[] = [
-  { id: "voltage", label: "Voltage", metricIds: ["battery_voltage", "pv_input_voltage", "grid_voltage", "output_voltage"], defaultMetricIds: ["battery_voltage", "pv_input_voltage"] },
-  { id: "power", label: "Power", metricIds: ["output_active_power_w", "output_apparent_power_va", "pv_power_w"], defaultMetricIds: ["output_active_power_w", "pv_power_w"] },
-  { id: "battery", label: "Battery", metricIds: ["battery_capacity_percent", "battery_voltage", "battery_charge_current", "battery_discharge_current"], defaultMetricIds: ["battery_capacity_percent", "battery_voltage"] },
-  { id: "bms", label: "BMS", metricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_current_a", "bms_power_w", "bms_delta_cell_voltage", "bms_mos_temperature_c", "bms_battery_t1_c", "bms_battery_t2_c", "bms_balance_current_a"], defaultMetricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_delta_cell_voltage"] },
-  { id: "cells", label: "Cells", metricIds: [...bmsCellMetricIds, ...bmsCellWireResistanceMetricIds, ...bmsCellResistanceMetricIds], defaultMetricIds: bmsCellMetricIds.slice(0, 8) },
-  { id: "pv", label: "PV", metricIds: ["pv_input_voltage", "pv_input_current", "pv_power_w"], defaultMetricIds: ["pv_input_voltage", "pv_power_w"] },
-  { id: "grid", label: "Grid", metricIds: ["grid_voltage", "grid_frequency"], defaultMetricIds: ["grid_voltage", "grid_frequency"] },
-  { id: "load", label: "Load", metricIds: ["load_percent", "output_active_power_w", "output_apparent_power_va"], defaultMetricIds: ["load_percent", "output_active_power_w"] },
-  { id: "temperature", label: "Temperature", metricIds: ["inverter_temperature_c"], defaultMetricIds: ["inverter_temperature_c"] },
+  { id: "voltage", metricIds: ["battery_voltage", "pv_input_voltage", "grid_voltage", "output_voltage"], defaultMetricIds: ["battery_voltage", "pv_input_voltage"] },
+  { id: "power", metricIds: ["output_active_power_w", "output_apparent_power_va", "pv_power_w"], defaultMetricIds: ["output_active_power_w", "pv_power_w"] },
+  { id: "battery", metricIds: ["battery_capacity_percent", "battery_voltage", "battery_charge_current", "battery_discharge_current"], defaultMetricIds: ["battery_capacity_percent", "battery_voltage"] },
+  { id: "bms", metricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_current_a", "bms_power_w", "bms_delta_cell_voltage", "bms_mos_temperature_c", "bms_battery_t1_c", "bms_battery_t2_c", "bms_balance_current_a"], defaultMetricIds: ["bms_capacity_percent", "bms_battery_voltage", "bms_delta_cell_voltage"] },
+  { id: "cells", metricIds: [...bmsCellMetricIds, ...bmsCellWireResistanceMetricIds, ...bmsCellResistanceMetricIds], defaultMetricIds: bmsCellMetricIds.slice(0, 8) },
+  { id: "pv", metricIds: ["pv_input_voltage", "pv_input_current", "pv_power_w"], defaultMetricIds: ["pv_input_voltage", "pv_power_w"] },
+  { id: "grid", metricIds: ["grid_voltage", "grid_frequency"], defaultMetricIds: ["grid_voltage", "grid_frequency"] },
+  { id: "load", metricIds: ["load_percent", "output_active_power_w", "output_apparent_power_va"], defaultMetricIds: ["load_percent", "output_active_power_w"] },
+  { id: "temperature", metricIds: ["inverter_temperature_c"], defaultMetricIds: ["inverter_temperature_c"] },
 ];
 
 const timeRanges: TimeRange[] = [
-  { label: "1h", param: "1h", hours: 1 },
-  { label: "6h", param: "6h", hours: 6 },
-  { label: "12h", param: "12h", hours: 12 },
-  { label: "24h", param: "24h", hours: 24 },
-  { label: "3d", param: "3d", hours: 72 },
-  { label: "7d", param: "7d", hours: 168 },
-  { label: "30d", param: "30d", hours: 720 },
+  { param: "1h", hours: 1 },
+  { param: "6h", hours: 6 },
+  { param: "12h", hours: 12 },
+  { param: "24h", hours: 24 },
+  { param: "3d", hours: 72 },
+  { param: "7d", hours: 168 },
+  { param: "30d", hours: 720 },
 ];
 
 const defaultAnalysisGroupId = "voltage";
@@ -403,11 +398,11 @@ const defaultTimeRange = timeRanges[0];
 const autoRefreshEnabledStorageKey = "sako_analysis_auto_refresh_enabled";
 const autoRefreshIntervalStorageKey = "sako_analysis_auto_refresh_interval_ms";
 const autoRefreshIntervals = [
-  { label: "5 sec", ms: 5_000 },
-  { label: "10 sec", ms: 10_000 },
-  { label: "30 sec", ms: 30_000 },
-  { label: "1 min", ms: 60_000 },
-];
+  { labelKey: "analysis.interval.5s", ms: 5_000 },
+  { labelKey: "analysis.interval.10s", ms: 10_000 },
+  { labelKey: "analysis.interval.30s", ms: 30_000 },
+  { labelKey: "analysis.interval.1m", ms: 60_000 },
+] satisfies Array<{ labelKey: TranslationKey; ms: number }>;
 const defaultAutoRefreshIntervalMs = 30_000;
 
 function storedAutoRefreshInterval() {
@@ -478,13 +473,13 @@ function inputDateTimeToIso(value: string) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function customDateRangeError(start: string, end: string) {
+function customDateRangeError(start: string, end: string, i18n: I18n) {
   if (!start && !end) return "";
-  if (!start || !end) return "Select both start and end.";
+  if (!start || !end) return i18n.t("analysis.customBoth");
   const startTime = new Date(start).getTime();
   const endTime = new Date(end).getTime();
-  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return "Select valid dates.";
-  if (startTime > endTime) return "Start must be before end.";
+  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return i18n.t("analysis.customValid");
+  if (startTime > endTime) return i18n.t("analysis.customOrder");
   return "";
 }
 
@@ -522,17 +517,17 @@ function formatMetricValue(metric: MetricDefinition, value: number | string | nu
   return display(value, metric.unit, metric.digits);
 }
 
-function sortedFilteredRows(samples: AnalysisSample[], metrics: MetricDefinition[], filter: string, sort: RawSort) {
+function sortedFilteredRows(samples: AnalysisSample[], metrics: MetricDefinition[], filter: string, sort: RawSort, i18n: I18n) {
   const query = filter.trim().toLowerCase();
-  const filtered = query ? samples.filter(sample => rawRowText(sample, metrics).includes(query)) : samples;
+  const filtered = query ? samples.filter(sample => rawRowText(sample, metrics, i18n).includes(query)) : samples;
   return [...filtered].sort((left, right) => compareRows(left, right, sort));
 }
 
-function rawRowText(sample: AnalysisSample, metrics: MetricDefinition[]) {
+function rawRowText(sample: AnalysisSample, metrics: MetricDefinition[], i18n: I18n) {
   return [
-    formatDate(sample.captured_at),
+    formatDate(sample.captured_at, i18n),
     sample.captured_at,
-    ...metrics.flatMap(metric => [metric.label, formatMetricValue(metric, metricValue(sample, metric.id))]),
+    ...metrics.flatMap(metric => [metricLabel(i18n, metric.id), formatMetricValue(metric, metricValue(sample, metric.id))]),
   ].join(" ").toLowerCase();
 }
 
@@ -564,31 +559,31 @@ function clampZoomRange(range: ChartZoomRange, length: number): ChartZoomRange {
   return { startIndex, endIndex };
 }
 
-function zoomRangeLabel(rows: Array<AnalysisSample & { at: string }>, range: ChartZoomRange) {
+function zoomRangeLabel(rows: Array<AnalysisSample & { at: string }>, range: ChartZoomRange, i18n: I18n) {
   const start = rows[range.startIndex]?.captured_at;
   const end = rows[range.endIndex]?.captured_at;
-  if (!start || !end) return "Full selected range";
-  return `Zoom ${shortDateTime(start)} to ${shortDateTime(end)}`;
+  if (!start || !end) return i18n.t("analysis.fullRange");
+  return i18n.t("analysis.zoomRange", { start: shortDateTime(start, i18n), end: shortDateTime(end, i18n) });
 }
 
-function chartTimeLabel(value: string, range: AnalysisRangeState) {
-  const date = new Date(value);
+function chartTimeLabel(value: string, range: AnalysisRangeState, i18n: I18n) {
   const hours = range.mode === "preset" ? range.hours : (new Date(range.end).getTime() - new Date(range.start).getTime()) / 3_600_000;
-  return hours > 24 ? date.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit" }) : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return i18n.chartTime(value, hours > 24);
 }
 
-function shortDateTime(value: string) {
-  return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function shortDateTime(value: string, i18n: I18n) {
+  return i18n.shortDateTime(value);
 }
 
-function timeRangeLabel(range: AnalysisRangeState) {
-  if (range.mode === "custom") return `${shortDateTime(range.start)} to ${shortDateTime(range.end)}`;
+function timeRangeLabel(range: AnalysisRangeState, i18n: I18n) {
+  if (range.mode === "custom") return i18n.t("analysis.customRange", { start: shortDateTime(range.start, i18n), end: shortDateTime(range.end, i18n) });
   const hours = range.hours;
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
-  return `${hours / 24} day${hours === 24 ? "" : "s"}`;
+  if (hours < 24) return i18n.t(hours === 1 ? "analysis.hourSingular" : "analysis.hourPlural", { count: hours });
+  const days = hours / 24;
+  return i18n.t(days === 1 ? "analysis.daySingular" : "analysis.dayPlural", { count: days });
 }
 
-function EnergyFlow({ values, connected, onBatteryOpen }: { values: StatusValues; connected: boolean; onBatteryOpen: () => void }) {
+function EnergyFlow({ values, connected, onBatteryOpen, i18n }: { values: StatusValues; connected: boolean; onBatteryOpen: () => void } & I18nProps) {
   const [viewMode, setViewMode] = useState<EnergyFlowView>(() => localStorage.getItem("sako_energy_flow_view") === "image" ? "image" : "3d");
   const pvPower = numeric(values.pv_input_voltage) * numeric(values.pv_input_current);
   const loadPower = numeric(values.output_active_power_w);
@@ -603,40 +598,40 @@ function EnergyFlow({ values, connected, onBatteryOpen }: { values: StatusValues
   const gridActive = gridPower > 1;
   const batteryActive = Math.abs(batteryPower) > 1;
   const loadActive = loadPower > 1;
-  const gridDirection = gridActive ? "Importing" : "Standby";
-  const batteryDirection = batteryCharging ? "Charging" : batteryDischarging ? "Discharging" : "Idle";
+  const gridDirection = gridActive ? i18n.t("state.importing") : i18n.t("state.standby");
+  const batteryDirection = batteryCharging ? i18n.t("state.charging") : batteryDischarging ? i18n.t("state.discharging") : i18n.t("state.idle");
   useEffect(() => { localStorage.setItem("sako_energy_flow_view", viewMode); }, [viewMode]);
 
-  return <section className="energy-flow panel" aria-label="Live energy flow">
-    <div className="energy-flow-heading"><div><p className="eyebrow">Live energy flow</p><h2>Where your power is going</h2></div><div className="energy-flow-actions"><div className="view-switch" aria-label="Energy flow view"><button type="button" className={viewMode === "3d" ? "active" : ""} aria-pressed={viewMode === "3d"} onClick={() => setViewMode("3d")}>3D</button><button type="button" className={viewMode === "image" ? "active" : ""} aria-pressed={viewMode === "image"} onClick={() => setViewMode("image")}>Image</button></div><div className={`diagram-status ${connected ? "online" : "offline"}`}><span />{connected ? "Live" : "Offline"}</div></div></div>
+  return <section className="energy-flow panel" aria-label={i18n.t("flow.live")}>
+    <div className="energy-flow-heading"><div><p className="eyebrow">{i18n.t("flow.live")}</p><h2>{i18n.t("flow.title")}</h2></div><div className="energy-flow-actions"><div className="view-switch" aria-label={i18n.t("flow.view")}><button type="button" className={viewMode === "3d" ? "active" : ""} aria-pressed={viewMode === "3d"} onClick={() => setViewMode("3d")}>3D</button><button type="button" className={viewMode === "image" ? "active" : ""} aria-pressed={viewMode === "image"} onClick={() => setViewMode("image")}>{i18n.t("flow.viewImage")}</button></div><div className={`diagram-status ${connected ? "online" : "offline"}`}><span />{connected ? i18n.t("status.live") : i18n.t("status.offline")}</div></div></div>
     <div className="energy-diagram">
       <div className={`energy-stage ${viewMode}`}>
         {viewMode === "3d" ? <EnergyFlow3D solarActive={solarActive} loadActive={loadActive} gridActive={gridActive} batteryCharging={batteryCharging} batteryDischarging={batteryDischarging} /> : <EnergyFlowImage solarActive={solarActive} loadActive={loadActive} gridActive={gridActive} batteryCharging={batteryCharging} batteryDischarging={batteryDischarging} />}
-        <div className="energy-metrics" aria-label="Live energy details">
-          <MetricCard className="pv-card" icon="sun" title="PV" value={pvPower > 1 ? watts(pvPower) : "0 W"} details={[
-            ["Voltage", display(values.pv_input_voltage, " V")],
-            ["Current", display(values.pv_input_current, " A")],
+        <div className="energy-metrics" aria-label={i18n.t("flow.details")}>
+          <MetricCard className="pv-card" icon="sun" title={i18n.t("label.pv")} value={pvPower > 1 ? watts(pvPower) : "0 W"} details={[
+            [i18n.t("label.voltage"), display(values.pv_input_voltage, " V")],
+            [i18n.t("label.current"), display(values.pv_input_current, " A")],
           ]} />
-          <MetricCard className="load-card" icon="home" title="Load" value={loadPower > 1 ? watts(loadPower) : "0 W"} details={[
-            ["Load", display(values.load_percent, "%", 0)],
-            ["Output", `${display(values.output_voltage, " V")} · ${display(values.output_frequency, " Hz")}`],
-            ["Apparent", display(values.output_apparent_power_va, " VA", 0)],
+          <MetricCard className="load-card" icon="home" title={i18n.t("label.load")} value={loadPower > 1 ? watts(loadPower) : "0 W"} details={[
+            [i18n.t("label.load"), display(values.load_percent, "%", 0)],
+            [i18n.t("label.output"), `${display(values.output_voltage, " V")} · ${display(values.output_frequency, " Hz")}`],
+            [i18n.t("label.apparent"), display(values.output_apparent_power_va, " VA", 0)],
           ]} />
-          <MetricCard className="battery-card" icon="battery" title="Battery" value={batteryActive ? watts(Math.abs(batteryPower)) : "0 W"} details={[
-            ["SOC", `${batteryPercent.toFixed(0)}% · ${batteryDirection}`],
-            ["Voltage", display(values.battery_voltage, " V")],
-            ["Charge", display(values.battery_charge_current, " A", 0)],
-            ["Discharge", display(values.battery_discharge_current, " A", 0)],
-          ]} onClick={onBatteryOpen} ariaLabel="Open battery and BMS detail diagram" />
-          <MetricCard className="grid-card" icon="tower" title="Grid" value={gridActive ? watts(gridPower) : "0 W"} details={[
-            ["Status", gridDirection],
-            ["Voltage", display(values.grid_voltage, " V")],
-            ["Frequency", display(values.grid_frequency, " Hz")],
+          <MetricCard className="battery-card" icon="battery" title={i18n.t("label.battery")} value={batteryActive ? watts(Math.abs(batteryPower)) : "0 W"} details={[
+            [i18n.t("label.soc"), `${batteryPercent.toFixed(0)}% · ${batteryDirection}`],
+            [i18n.t("label.voltage"), display(values.battery_voltage, " V")],
+            [i18n.t("label.charge"), display(values.battery_charge_current, " A", 0)],
+            [i18n.t("label.discharge"), display(values.battery_discharge_current, " A", 0)],
+          ]} onClick={onBatteryOpen} ariaLabel={i18n.t("flow.openBattery")} />
+          <MetricCard className="grid-card" icon="tower" title={i18n.t("label.grid")} value={gridActive ? watts(gridPower) : "0 W"} details={[
+            [i18n.t("label.status"), gridDirection],
+            [i18n.t("label.voltage"), display(values.grid_voltage, " V")],
+            [i18n.t("label.frequency"), display(values.grid_frequency, " Hz")],
           ]} />
         </div>
       </div>
     </div>
-    <div className="flow-legend"><span><i className="legend-dot solar" />Solar production</span><span><i className="legend-dot battery" />Battery storage</span><span><i className="legend-dot grid" />CEB utility</span><span>Live values update automatically</span></div>
+    <div className="flow-legend"><span><i className="legend-dot solar" />{i18n.t("flow.solarProduction")}</span><span><i className="legend-dot battery" />{i18n.t("flow.batteryStorage")}</span><span><i className="legend-dot grid" />{i18n.t("flow.cebUtility")}</span><span>{i18n.t("flow.autoUpdate")}</span></div>
   </section>;
 }
 
@@ -949,7 +944,7 @@ const defaultBatteryAnchors: BatteryAnchorPositions = {
   bms: { left: "29%", top: "74%" },
 };
 
-function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bms?: BmsStatus | null; onClose: () => void }) {
+function BatteryDetailModal({ values, bms, onClose, i18n }: { values: StatusValues; bms?: BmsStatus | null; onClose: () => void } & I18nProps) {
   const [anchors, setAnchors] = useState<BatteryAnchorPositions>(defaultBatteryAnchors);
   const updateAnchors = useCallback((next: BatteryAnchorPositions) => setAnchors(next), []);
 
@@ -967,34 +962,35 @@ function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bm
   const current = finiteNumber(bms?.current_a);
   const balanceCurrent = finiteNumber(bms?.balance_current_a);
   const flowState: FlowState = current === null || Math.abs(current) < 0.05 ? "idle" : current > 0 ? "charging" : "discharging";
-  const flowLabel = flowState === "charging" ? "Charging" : flowState === "discharging" ? "Discharging" : "Idle";
-  const balanceState = balanceCurrent === null || Math.abs(balanceCurrent) < 0.005 ? "Idle" : balanceCurrent > 0 ? "Balancing charge" : "Balancing discharge";
+  const flowLabel = flowState === "charging" ? i18n.t("state.charging") : flowState === "discharging" ? i18n.t("state.discharging") : i18n.t("state.idle");
+  const balanceState = balanceCurrent === null || Math.abs(balanceCurrent) < 0.005 ? i18n.t("state.idle") : balanceCurrent > 0 ? i18n.t("state.balancingCharge") : i18n.t("state.balancingDischarge");
   const bmsOnline = Boolean(bms?.connected && !bms.stale);
   const packStats: Array<[string, string]> = [
-    ["Pack", display(bms?.voltage ?? values.battery_voltage, " V", 2)],
-    ["SOC", bms?.capacity_percent !== null && bms?.capacity_percent !== undefined ? display(bms.capacity_percent, "%", 0) : `${batteryPercent.toFixed(0)}%`],
-    ["Current", display(bms?.current_a, " A", 2)],
-    ["Power", display(bms?.power_w, " W", 0)],
-    ["State", flowLabel],
-    ["Delta", display(bms?.delta_cell_voltage, " V", 3)],
-    ["Balance", `${balanceState} · ${display(bms?.balance_current_a, " A", 2)}`],
-    ["Cycles", display(bms?.cycle_count, "", 0)],
-    ["Remaining", `${display(bms?.remaining_capacity_ah, " Ah", 1)} / ${display(bms?.nominal_capacity_ah, " Ah", 1)}`],
-    ["Battery T1", display(bms?.battery_t1_c, "°C", 1)],
-    ["Battery T2", display(bms?.battery_t2_c, "°C", 1)],
+    [i18n.t("label.pack"), display(bms?.voltage ?? values.battery_voltage, " V", 2)],
+    [i18n.t("label.soc"), bms?.capacity_percent !== null && bms?.capacity_percent !== undefined ? display(bms.capacity_percent, "%", 0) : `${batteryPercent.toFixed(0)}%`],
+    [i18n.t("label.current"), display(bms?.current_a, " A", 2)],
+    [i18n.t("label.power"), display(bms?.power_w, " W", 0)],
+    [i18n.t("label.state"), flowLabel],
+    [i18n.t("label.delta"), display(bms?.delta_cell_voltage, " V", 3)],
+    [i18n.t("label.balance"), `${balanceState} · ${display(bms?.balance_current_a, " A", 2)}`],
+    [i18n.t("label.cycles"), display(bms?.cycle_count, "", 0)],
+    [i18n.t("label.remaining"), `${display(bms?.remaining_capacity_ah, " Ah", 1)} / ${display(bms?.nominal_capacity_ah, " Ah", 1)}`],
+    [i18n.t("metric.bms_battery_t1_c"), display(bms?.battery_t1_c, "°C", 1)],
+    [i18n.t("metric.bms_battery_t2_c"), display(bms?.battery_t2_c, "°C", 1)],
     ["MOS", display(bms?.mos_temperature_c, "°C", 1)],
-    ["Updated", formatDate(bms?.captured_at)],
+    [i18n.t("label.updated"), formatDate(bms?.captured_at, i18n)],
   ];
   const bmsStatusClass = bms?.connected && !bms.stale ? "on" : "";
-  const bmsStatusLabel = !bms?.enabled ? "Disabled" : bms.stale ? "Stale" : bms.connected ? "Live" : "Offline";
+  const bmsStatusLabel = !bms?.enabled ? i18n.t("status.disabled") : bms.stale ? i18n.t("status.stale") : bms.connected ? i18n.t("status.live") : i18n.t("status.offline");
+  const balanceIdle = balanceCurrent === null || Math.abs(balanceCurrent) < 0.005;
 
   return <div className="battery-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className={`battery-modal ${bms?.connected ? "online" : "offline"} ${bms?.stale ? "stale" : ""}`} role="dialog" aria-modal="true" aria-labelledby="battery-detail-title">
-      <div className="battery-modal-head"><div><p className="eyebrow">Battery detail</p><h2 id="battery-detail-title">Battery pack and JK-BMS</h2><p>{bms?.name || bms?.address || "Bluetooth BMS"} · {bms?.protocol || "JK"} · cells 1-8 left to right</p></div><div><span className={`live ${bmsStatusClass}`}>{bmsStatusLabel}</span><button className="battery-modal-close" type="button" onClick={onClose} aria-label="Close battery detail">×</button></div></div>
-      {(bms?.error || bms?.last_error) && <p className={bms.error ? "error battery-modal-message" : "bms-note battery-modal-message"}>{bms.error || `Last poll error: ${bms.last_error}`}</p>}
-      <div className="battery-state-strip" aria-label="Battery BMS state">
+      <div className="battery-modal-head"><div><p className="eyebrow">{i18n.t("battery.detail")}</p><h2 id="battery-detail-title">{i18n.t("battery.title")}</h2><p>{i18n.t("battery.subtitle", { name: bms?.name || bms?.address || i18n.t("battery.bluetoothBms"), protocol: bms?.protocol || "JK" })}</p></div><div><span className={`live ${bmsStatusClass}`}>{bmsStatusLabel}</span><button className="battery-modal-close" type="button" onClick={onClose} aria-label={i18n.t("battery.close")}>×</button></div></div>
+      {(bms?.error || bms?.last_error) && <p className={bms.error ? "error battery-modal-message" : "bms-note battery-modal-message"}>{bms.error || i18n.t("battery.lastPollError", { error: bms.last_error || "" })}</p>}
+      <div className="battery-state-strip" aria-label={i18n.t("battery.bmsState")}>
         <span className={`state-pill ${flowState}`}>{flowLabel}</span>
-        <span className={`state-pill ${balanceState === "Idle" ? "idle" : "balancing"}`}>{balanceState}</span>
+        <span className={`state-pill ${balanceIdle ? "idle" : "balancing"}`}>{balanceState}</span>
         <span className="state-pill neutral">{display(bms?.current_a, " A", 2)}</span>
         <span className="state-pill neutral">{display(bms?.power_w, " W", 0)}</span>
       </div>
@@ -1006,9 +1002,9 @@ function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bm
             const edge = voltage !== null && voltage === minVoltage ? "low" : voltage !== null && voltage === maxVoltage ? "high" : "";
             const wireResistance = cell.wire_resistance_mohm ?? cell.resistance_mohm;
             return <div className={`battery-cell-pin ${edge}`} key={cell.index} style={anchors.cells[index] || defaultBatteryAnchors.cells[index]}>
-              <span>Cell {cell.index}</span>
+              <span>{i18n.t("battery.cell", { index: cell.index })}</span>
               <strong>{display(cell.voltage, " V", 3)}</strong>
-              <small>wire {display(wireResistance, " mΩ", 3)}</small>
+              <small>{i18n.t("battery.wire", { value: display(wireResistance, " mΩ", 3) })}</small>
             </div>;
           })}
           <div className="bms-module-pin" style={anchors.bms}><span>BMS</span><strong>{balanceState}</strong><small>{display(bms?.balance_current_a, " A", 2)}</small></div>
@@ -1225,26 +1221,26 @@ function OverviewRow({ icon, label, value, note, progress, compact = false }: { 
   return <div className="overview-row"><EnergyIcon name={icon} /><div><span>{label}</span><strong className={compact ? "compact" : ""}>{value}</strong>{progress !== undefined && <i className="soc-meter"><b style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} /></i>}{note && <small>{note}</small>}</div></div>;
 }
 
-function BmsCellHealth({ bms }: { bms?: BmsStatus | null }) {
+function BmsCellHealth({ bms, i18n }: { bms?: BmsStatus | null } & I18nProps) {
   if (!bms?.enabled) return null;
   const cells = bms.cells || [];
   const minVoltage = cells.length ? Math.min(...cells.map(cell => cell.voltage)) : null;
   const maxVoltage = cells.length ? Math.max(...cells.map(cell => cell.voltage)) : null;
   return <article className={`panel bms-health ${bms.connected ? "online" : "offline"} ${bms.stale ? "stale" : ""}`}>
-    <div className="bms-health-head"><div><h3>JK-BMS cells</h3><p>{bms.name || bms.address || "Bluetooth BMS"} · {bms.protocol || "JK"}</p></div><span className={bms.connected && !bms.stale ? "live on" : "live"}>{bms.stale ? "Stale" : bms.connected ? "Live" : "Offline"}</span></div>
+    <div className="bms-health-head"><div><h3>{i18n.t("battery.jkCells")}</h3><p>{bms.name || bms.address || i18n.t("battery.bluetoothBms")} · {bms.protocol || "JK"}</p></div><span className={bms.connected && !bms.stale ? "live on" : "live"}>{bms.stale ? i18n.t("status.stale") : bms.connected ? i18n.t("status.live") : i18n.t("status.offline")}</span></div>
     <div className="bms-health-stats">
-      <BmsStat label="Pack" value={display(bms.voltage, " V", 2)} />
-      <BmsStat label="SOC" value={display(bms.capacity_percent, "%", 0)} />
-      <BmsStat label="Current" value={display(bms.current_a, " A", 2)} />
-      <BmsStat label="Delta" value={display(bms.delta_cell_voltage, " V", 3)} />
-      <BmsStat label="Temp" value={display(bms.mos_temperature_c ?? bms.battery_t1_c, "°C", 1)} />
+      <BmsStat label={i18n.t("label.pack")} value={display(bms.voltage, " V", 2)} />
+      <BmsStat label={i18n.t("label.soc")} value={display(bms.capacity_percent, "%", 0)} />
+      <BmsStat label={i18n.t("label.current")} value={display(bms.current_a, " A", 2)} />
+      <BmsStat label={i18n.t("label.delta")} value={display(bms.delta_cell_voltage, " V", 3)} />
+      <BmsStat label={i18n.t("label.temp")} value={display(bms.mos_temperature_c ?? bms.battery_t1_c, "°C", 1)} />
     </div>
     {bms.error && <p className="error">{bms.error}</p>}
-    {!bms.error && bms.stale && <p className="bms-note">Last BMS poll failed; showing the last successful reading.</p>}
-    {cells.length === 0 ? <p>No cell voltage data is available yet.</p> : <div className="bms-cell-grid">{cells.map(cell => {
+    {!bms.error && bms.stale && <p className="bms-note">{i18n.t("battery.staleNote")}</p>}
+    {cells.length === 0 ? <p>{i18n.t("battery.noCellData")}</p> : <div className="bms-cell-grid">{cells.map(cell => {
       const fill = cellVoltageFill(cell.voltage);
       const edge = cell.voltage === minVoltage ? "low" : cell.voltage === maxVoltage ? "high" : "";
-      return <div className={`bms-cell ${edge}`} key={cell.index}><span>Cell {String(cell.index).padStart(2, "0")}</span><strong>{display(cell.voltage, " V", 3)}</strong><i><b style={{ width: `${fill}%` }} /></i></div>;
+      return <div className={`bms-cell ${edge}`} key={cell.index}><span>{i18n.t("battery.cellPadded", { index: String(cell.index).padStart(2, "0") })}</span><strong>{display(cell.voltage, " V", 3)}</strong><i><b style={{ width: `${fill}%` }} /></i></div>;
     })}</div>}
   </article>;
 }
@@ -1257,10 +1253,10 @@ function cellVoltageFill(value: number) {
   return Math.min(100, Math.max(0, ((value - 2.8) / (3.65 - 2.8)) * 100));
 }
 
-function batterySourceLabel(value: number | string | null | undefined, bms?: BmsStatus | null) {
-  if (value === "bms") return bms?.stale ? "JK-BMS Bluetooth (last good)" : "JK-BMS Bluetooth";
-  if (bms?.enabled && bms.error) return "Inverter fallback";
-  return "Inverter";
+function batterySourceLabel(value: number | string | null | undefined, bms: BmsStatus | null | undefined, i18n: I18n) {
+  if (value === "bms") return bms?.stale ? i18n.t("batterySource.jkbmsLastGood") : i18n.t("batterySource.jkbms");
+  if (bms?.enabled && bms.error) return i18n.t("batterySource.inverterFallback");
+  return i18n.t("batterySource.inverter");
 }
 
 type IconName = "sun" | "home" | "battery" | "tower" | "panel" | "pulse" | "temp" | "inverter";
@@ -1289,64 +1285,49 @@ const priorityAliases: Record<string, Record<string, string>> = {
   charger_source_priority: { "0": "utility", "00": "utility", utility: "utility", "1": "solar_first", "01": "solar_first", solar_first: "solar_first", "2": "solar_utility", "02": "solar_utility", solar_utility: "solar_utility", "3": "solar", "03": "solar", solar: "solar" },
 };
 
-const settingExplainers: Record<string, { resetNote: string; choices: Record<string, string> }> = {
-  output_source_priority: {
-    resetNote: "Factory-safe reset uses utility first so the home load prefers the grid.",
-    choices: {
-      utility: "Grid feeds the home first; solar and battery support when utility is not available.",
-      solar: "Solar feeds the home first; utility supports the load when solar is low.",
-      sbu: "Solar feeds first, then battery, then utility as the final backup.",
-    },
-  },
-  charger_source_priority: {
-    resetNote: "Factory-safe reset uses solar first charging.",
-    choices: {
-      solar_first: "Solar charges the battery first; utility can assist when needed.",
-      solar_utility: "Solar and utility can charge the battery together.",
-      solar: "Only solar charges the battery; utility charging stays off.",
-    },
-  },
-};
-
-function Settings({ authenticated, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults }: { authenticated: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void> }) {
-  if (!authenticated) return <section className="panel login"><h2>Administrator sign in</h2><p>Settings require the local administrator password.</p><form onSubmit={login}><input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"/><button>Sign in</button></form></section>;
+function Settings({ authenticated, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, i18n }: { authenticated: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void> } & I18nProps) {
+  if (!authenticated) return <section className="panel login"><h2>{i18n.t("settings.adminSignIn")}</h2><p>{i18n.t("settings.signInRequired")}</p><form onSubmit={login}><input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder={i18n.t("settings.password")}/><button>{i18n.t("settings.signIn")}</button></form></section>;
   const resetDisabled = Boolean(pendingSetting) || capabilities.length === 0;
   return <section className="settings-page">
-    <div className="section-title"><div><h2>Inverter settings</h2><p>Priority changes can transfer load or change battery charging behavior.</p></div><div className="settings-actions"><button className="quiet danger" disabled={resetDisabled} onClick={() => void onResetDefaults()}>{pendingSetting ? "Applying..." : "Reset defaults"}</button><button className="quiet" onClick={() => void logout()}>Sign out</button></div></div>
-    {capabilities.length === 0 && <div className="panel settings-empty"><b>No configurable priorities available</b><p>The inverter capability check has not confirmed supported priority settings yet.</p></div>}
-    {capabilities.map(capability => <SettingCard key={capability.key} capability={capability} currentValue={currentSettings[capability.key]} pendingSetting={pendingSetting} onChange={onChange} />)}
+    <div className="section-title"><div><h2>{i18n.t("settings.title")}</h2><p>{i18n.t("settings.subtitle")}</p></div><div className="settings-actions"><button className="quiet danger" disabled={resetDisabled} onClick={() => void onResetDefaults()}>{pendingSetting ? i18n.t("settings.applying") : i18n.t("settings.resetDefaults")}</button><button className="quiet" onClick={() => void logout()}>{i18n.t("settings.signOut")}</button></div></div>
+    {capabilities.length === 0 && <div className="panel settings-empty"><b>{i18n.t("settings.noPriorities")}</b><p>{i18n.t("settings.noPrioritiesDetail")}</p></div>}
+    {capabilities.map(capability => <SettingCard key={capability.key} capability={capability} currentValue={currentSettings[capability.key]} pendingSetting={pendingSetting} onChange={onChange} i18n={i18n} />)}
   </section>;
 }
 
-function SettingCard({ capability, currentValue, pendingSetting, onChange }: { capability: Capability; currentValue?: string; pendingSetting: PendingSetting; onChange: (key: string, value: string) => Promise<void> }) {
+function SettingCard({ capability, currentValue, pendingSetting, onChange, i18n }: { capability: Capability; currentValue?: string; pendingSetting: PendingSetting; onChange: (key: string, value: string) => Promise<void> } & I18nProps) {
   const currentChoice = capability.choices.find(choice => choice.value === currentValue);
   const pendingForCard = pendingSetting?.key === capability.key;
   const diagramValue = currentValue || capability.choices[0]?.value || "";
+  const capabilityLabel = settingTitleLabel(i18n, capability.key);
+  const capabilityWarning = settingWarningLabel(i18n, capability.key, capability.warning);
+  const currentChoiceLabel = currentChoice ? settingChoiceLabel(i18n, capability.key, currentChoice.value, currentChoice.label) : i18n.t("settings.unavailable");
   return <article className={`panel setting rich-setting ${pendingForCard ? "applying" : ""}`}>
     <div className="setting-layout">
       <div className="setting-main">
-        <div className="setting-card-head"><div><h3>{capability.label}</h3><p>{capability.warning}</p></div><span className={currentChoice ? "current-badge" : "current-badge muted"}>Current: {currentChoice?.label || "Unavailable"}</span></div>
-        <PriorityDiagram settingKey={capability.key} value={diagramValue} />
+        <div className="setting-card-head"><div><h3>{capabilityLabel}</h3><p>{capabilityWarning}</p></div><span className={currentChoice ? "current-badge" : "current-badge muted"}>{i18n.t("settings.current", { value: currentChoiceLabel })}</span></div>
+        <PriorityDiagram settingKey={capability.key} value={diagramValue} i18n={i18n} />
         <div className="choice-grid">{capability.choices.map(choice => {
           const selected = choice.value === currentValue;
           const applying = pendingSetting?.key === capability.key && pendingSetting.value === choice.value;
-          const description = settingExplainers[capability.key]?.choices[choice.value] || "Apply this supported inverter priority.";
-          return <button key={choice.value} className={`choice-card ${selected ? "selected" : ""}`} disabled={pendingForCard} onClick={() => { if (window.confirm(`${capability.warning}\n\nApply "${choice.label}"?`)) void onChange(capability.key, choice.value); }}>
-            <span>{choice.label}</span>
-            {applying && <i className="spinner" aria-label="Applying setting" />}
+          const choiceLabel = settingChoiceLabel(i18n, capability.key, choice.value, choice.label);
+          const description = settingDetailLabel(i18n, capability.key, choice.value);
+          return <button key={choice.value} className={`choice-card ${selected ? "selected" : ""}`} disabled={pendingForCard} onClick={() => { if (window.confirm(i18n.t("confirm.applyChoice", { warning: capabilityWarning, choice: choiceLabel }))) void onChange(capability.key, choice.value); }}>
+            <span>{choiceLabel}</span>
+            {applying && <i className="spinner" aria-label={i18n.t("settings.applying")} />}
             <small>{description}</small>
           </button>;
         })}</div>
       </div>
-      <aside className="setting-reset-note"><b>Default</b><span>{settingExplainers[capability.key]?.resetNote || "Reset returns this setting to the factory-safe value."}</span></aside>
+      <aside className="setting-reset-note"><b>{i18n.t("settings.default")}</b><span>{settingResetLabel(i18n, capability.key)}</span></aside>
     </div>
   </article>;
 }
 
-function PriorityDiagram({ settingKey, value }: { settingKey: string; value: string }) {
+function PriorityDiagram({ settingKey, value, i18n }: { settingKey: string; value: string } & I18nProps) {
   const output = settingKey === "output_source_priority";
   const active = output ? outputPrioritySources(value) : chargerPrioritySources(value);
-  return <div className="priority-diagram" aria-label={`${settingTitle(settingKey)} flow`}>
+  return <div className="priority-diagram" aria-label={i18n.t("settings.flow", { setting: settingTitle(settingKey, i18n) })}>
     <img className="priority-diagram-bg" src={settingsPriorityDiagram} alt="" aria-hidden="true" />
     <div className="priority-diagram-shade" />
     <svg className="priority-lines" viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">
@@ -1355,11 +1336,11 @@ function PriorityDiagram({ settingKey, value }: { settingKey: string; value: str
       <path className="diagram-line target active" d={output ? "M 55 31 C 65 29 73 25 82 22" : "M 55 34 C 63 39 70 43 78 43"} />
       {output && <path className={`diagram-line battery ${active.includes("battery") ? "active" : ""}`} d="M 78 43 C 69 43 61 39 55 34" />}
     </svg>
-    <DiagramNode name="Grid" icon="tower" active={active.includes("grid")} className="grid-node" />
-    <DiagramNode name="Solar" icon="sun" active={active.includes("solar")} className="solar-node" />
-    <div className="diagram-center"><EnergyIcon name="inverter" /><span>Inverter</span></div>
-    <DiagramNode name={output ? "Home" : "Battery"} icon={output ? "home" : "battery"} active className={output ? "home-target" : "battery-target"} />
-    {output && <DiagramNode name="Battery" icon="battery" active={active.includes("battery")} className="battery-source" />}
+    <DiagramNode name={i18n.t("label.grid")} icon="tower" active={active.includes("grid")} className="grid-node" />
+    <DiagramNode name={i18n.t("label.solar")} icon="sun" active={active.includes("solar")} className="solar-node" />
+    <div className="diagram-center"><EnergyIcon name="inverter" /><span>{i18n.t("label.inverter")}</span></div>
+    <DiagramNode name={output ? i18n.t("label.home") : i18n.t("label.battery")} icon={output ? "home" : "battery"} active className={output ? "home-target" : "battery-target"} />
+    {output && <DiagramNode name={i18n.t("label.battery")} icon="battery" active={active.includes("battery")} className="battery-source" />}
   </div>;
 }
 
@@ -1394,17 +1375,16 @@ function normalizePriorityValue(key: string, value: unknown) {
   return aliases[raw] || aliases[raw.toLowerCase()] || aliases[raw.toUpperCase()];
 }
 
-function settingDisplayLabel(key: string, value: string) {
-  return ratingValueLabels[key]?.[value] || value;
+function settingDisplayLabel(key: string, value: string, i18n: I18n) {
+  return ratingValueLabel(key, value, i18n) || value;
 }
 
-function settingTitle(key: string) {
-  if (key === "output_source_priority") return "Output source priority";
-  if (key === "charger_source_priority") return "Charger source priority";
-  return "Setting";
+function settingTitle(key: string, i18n: I18n) {
+  if (key === "output_source_priority" || key === "charger_source_priority") return settingTitleLabel(i18n, key);
+  return i18n.t("setting.generic");
 }
 
-function Diagnostics({ authenticated }: { authenticated: boolean }) {
+function Diagnostics({ authenticated, i18n }: { authenticated: boolean } & I18nProps) {
   const [data, setData] = useState<DiagnosticsResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState<"" | "load" | "refresh">("");
@@ -1426,7 +1406,7 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
       setData(next);
       setError("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Sign in first");
+      setError(e instanceof Error ? e.message : i18n.t("diagnostics.signInFirst"));
     } finally {
       setLoading("");
     }
@@ -1454,38 +1434,38 @@ function Diagnostics({ authenticated }: { authenticated: boolean }) {
       setData({ diagnostics: refreshed.diagnostics, latest: latestStatus, bms: refreshed.bms });
       setError("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to refresh diagnostics");
+      setError(e instanceof Error ? e.message : i18n.t("diagnostics.refreshError"));
     } finally {
       setLoading("");
     }
   };
 
   return <section className="diagnostics">
-    <div className="section-title"><div><h2>Diagnostics</h2><p>Identity, firmware, ratings, flags, and raw protocol replies are restricted to the administrator.</p></div>{authenticated && <div className="diagnostics-actions"><button className="quiet" disabled={Boolean(loading)} onClick={() => void refresh()}>{loading === "refresh" ? "Refreshing..." : "Refresh discovery"}</button></div>}</div>
-    {!authenticated && <div className="panel diagnostics-empty"><b>Administrator sign in required</b><p>Sign in from Settings to view inverter diagnostics.</p></div>}
-    {authenticated && loading === "load" && !data && <div className="panel diagnostics-empty"><b>Loading diagnostics</b><p>Reading system information from the inverter.</p></div>}
+    <div className="section-title"><div><h2>{i18n.t("diagnostics.title")}</h2><p>{i18n.t("diagnostics.subtitle")}</p></div>{authenticated && <div className="diagnostics-actions"><button className="quiet" disabled={Boolean(loading)} onClick={() => void refresh()}>{loading === "refresh" ? i18n.t("diagnostics.refreshing") : i18n.t("diagnostics.refreshDiscovery")}</button></div>}</div>
+    {!authenticated && <div className="panel diagnostics-empty"><b>{i18n.t("diagnostics.signInRequired")}</b><p>{i18n.t("diagnostics.signInDetail")}</p></div>}
+    {authenticated && loading === "load" && !data && <div className="panel diagnostics-empty"><b>{i18n.t("diagnostics.loading")}</b><p>{i18n.t("diagnostics.loadingDetail")}</p></div>}
     {error && <p className="error">{error}</p>}
     {data && <>
       <div className="diagnostics-summary">
-        <DiagnosticsSummaryCard label="Connection" value={latest?.connected ? "Connected" : "Offline"} tone={latest?.connected ? "ok" : "warn"} detail={latest?.error || latest?.warnings || "Live telemetry available"} />
-        <DiagnosticsSummaryCard label="JK-BMS" value={bmsLabel(bms)} tone={bms?.enabled ? bms.connected ? "ok" : "warn" : "neutral"} detail={bmsDetail(bms)} />
-        <DiagnosticsSummaryCard label="Mode" value={formatInverterMode(latest?.mode)} detail={formatDate(latest?.captured_at)} />
-        <DiagnosticsSummaryCard label="Protocol" value={protocolOk ? "PIP compatible" : "Needs attention"} tone={protocolOk ? "ok" : "warn"} detail={protocol || protocolError || "No protocol reply"} />
-        <DiagnosticsSummaryCard label="Active flags" value={String(activeFlags.length)} tone={activeFlags.length ? "warn" : "ok"} detail={activeFlags.length ? activeFlags.map(flag => flag.label).join(", ") : "No active status flags"} />
+        <DiagnosticsSummaryCard label={i18n.t("diagnostics.connection")} value={latest?.connected ? i18n.t("status.connected") : i18n.t("status.offline")} tone={latest?.connected ? "ok" : "warn"} detail={latest?.error || latest?.warnings || i18n.t("diagnostics.liveTelemetry")} />
+        <DiagnosticsSummaryCard label="JK-BMS" value={bmsLabel(bms, i18n)} tone={bms?.enabled ? bms.connected ? "ok" : "warn" : "neutral"} detail={bmsDetail(bms, i18n)} />
+        <DiagnosticsSummaryCard label={i18n.t("diagnostics.mode")} value={formatInverterMode(latest?.mode, i18n)} detail={formatDate(latest?.captured_at, i18n)} />
+        <DiagnosticsSummaryCard label={i18n.t("diagnostics.protocol")} value={protocolOk ? i18n.t("diagnostics.pipCompatible") : i18n.t("diagnostics.needsAttention")} tone={protocolOk ? "ok" : "warn"} detail={protocol || protocolError || i18n.t("diagnostics.noProtocolReply")} />
+        <DiagnosticsSummaryCard label={i18n.t("diagnostics.activeFlags")} value={String(activeFlags.length)} tone={activeFlags.length ? "warn" : "ok"} detail={activeFlags.length ? activeFlags.map(flag => statusFlagLabel(i18n, flag.key, flag.label)).join(", ") : i18n.t("diagnostics.noActiveFlags")} />
       </div>
       <div className="diagnostics-grid">
-        <DiagnosticsPanel title="Inverter identity" rows={[
-          ["Protocol", protocol || errorValue(diagnostics.QPI) || "—"],
-          ["Serial / ID", textValue(diagnostics.QID) || errorValue(diagnostics.QID) || "—"],
-          ["Firmware", textValue(diagnostics.QVFW) || errorValue(diagnostics.QVFW) || "—"],
-          ["Secondary firmware", textValue(diagnostics.QVFW2) || errorValue(diagnostics.QVFW2) || "—"],
-          ...(protocolError ? [["Protocol issue", protocolError] as [string, string]] : []),
+        <DiagnosticsPanel title={i18n.t("diagnostics.identity")} rows={[
+          [i18n.t("diagnostics.protocol"), protocol || errorValue(diagnostics.QPI) || "—"],
+          [i18n.t("diagnostics.serial"), textValue(diagnostics.QID) || errorValue(diagnostics.QID) || "—"],
+          [i18n.t("diagnostics.firmware"), textValue(diagnostics.QVFW) || errorValue(diagnostics.QVFW) || "—"],
+          [i18n.t("diagnostics.secondaryFirmware"), textValue(diagnostics.QVFW2) || errorValue(diagnostics.QVFW2) || "—"],
+          ...(protocolError ? [[i18n.t("diagnostics.protocolIssue"), protocolError] as [string, string]] : []),
         ]} />
-        <DiagnosticsPanel title="Rated configuration" rows={ratingRows.map(row => [row.label, formatRating(row.key, rating?.[row.key], row.unit, row.digits)])} />
-        <DiagnosticsPanel title="JK-BMS Bluetooth" rows={bmsRows(bms)} />
+        <DiagnosticsPanel title={i18n.t("diagnostics.ratedConfig")} rows={ratingRows.map(row => [i18n.t(row.labelKey), formatRating(row.key, rating?.[row.key], row.unit, row.digits, i18n)])} />
+        <DiagnosticsPanel title={i18n.t("diagnostics.jkbmsBluetooth")} rows={bmsRows(bms, i18n)} />
       </div>
-      <article className="panel diagnostics-flags"><h3>Status flags</h3>{flags.length ? <><div className="flag-list">{activeFlags.map(flag => <span className="flag-chip active" key={flag.key} title={flag.description}>{flag.label}</span>)}{activeFlags.length === 0 && <span className="flag-chip calm">No active flags</span>}</div>{inactiveFlags.length > 0 && <div className="flag-list muted">{inactiveFlags.map(flag => <span className="flag-chip" key={flag.key} title={flag.description}>{flag.label}</span>)}</div>}</> : <p>No decoded status flags are available from the latest telemetry.</p>}</article>
-      <details className="panel raw-replies"><summary>Raw protocol replies</summary><dl>{rawCommands.map(command => <div key={command}><dt>{command}</dt><dd>{formatRawValue(diagnostics[command])}</dd></div>)}</dl></details>
+      <article className="panel diagnostics-flags"><h3>{i18n.t("diagnostics.statusFlags")}</h3>{flags.length ? <><div className="flag-list">{activeFlags.map(flag => <span className="flag-chip active" key={flag.key} title={statusFlagDescription(i18n, flag.key, flag.description)}>{statusFlagLabel(i18n, flag.key, flag.label)}</span>)}{activeFlags.length === 0 && <span className="flag-chip calm">{i18n.t("diagnostics.noActiveFlags")}</span>}</div>{inactiveFlags.length > 0 && <div className="flag-list muted">{inactiveFlags.map(flag => <span className="flag-chip" key={flag.key} title={statusFlagDescription(i18n, flag.key, flag.description)}>{statusFlagLabel(i18n, flag.key, flag.label)}</span>)}</div>}</> : <p>{i18n.t("diagnostics.noDecodedFlags")}</p>}</article>
+      <details className="panel raw-replies"><summary>{i18n.t("diagnostics.rawReplies")}</summary><dl>{rawCommands.map(command => <div key={command}><dt>{command}</dt><dd>{formatRawValue(diagnostics[command], i18n)}</dd></div>)}</dl></details>
     </>}
   </section>;
 }
@@ -1498,61 +1478,61 @@ function DiagnosticsPanel({ title, rows }: { title: string; rows: Array<[string,
   return <article className="panel diagnostics-panel"><h3>{title}</h3><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></article>;
 }
 
-function bmsLabel(bms: BmsStatus | null) {
-  if (!bms?.enabled) return "Disabled";
-  if (bms.stale) return "Stale";
-  return bms.connected ? "Connected" : "Offline";
+function bmsLabel(bms: BmsStatus | null, i18n: I18n) {
+  if (!bms?.enabled) return i18n.t("status.disabled");
+  if (bms.stale) return i18n.t("status.stale");
+  return bms.connected ? i18n.t("status.connected") : i18n.t("status.offline");
 }
 
-function bmsDetail(bms: BmsStatus | null) {
-  if (!bms?.enabled) return "BMS polling is disabled";
-  return bms.error || bms.last_error || `${bms.address || "No address"} · ${formatDate(bms.captured_at)}`;
+function bmsDetail(bms: BmsStatus | null, i18n: I18n) {
+  if (!bms?.enabled) return i18n.t("diagnostics.bmsDisabled");
+  return bms.error || bms.last_error || `${bms.address || i18n.t("diagnostics.noAddress")} · ${formatDate(bms.captured_at, i18n)}`;
 }
 
-function bmsRows(bms: BmsStatus | null): Array<[string, string]> {
+function bmsRows(bms: BmsStatus | null, i18n: I18n): Array<[string, string]> {
   const rawSummary = recordValue(bms?.raw_summary);
   const rawKeys = Array.isArray(rawSummary?.keys) ? rawSummary.keys.map(String).join(", ") : "—";
   return [
-    ["Mode", bms?.enabled ? bms.source : "Disabled"],
-    ["Connection", bms?.connected ? "Connected" : "Offline"],
-    ["Address", bms?.address || "—"],
-    ["Name", bms?.name || "—"],
-    ["Protocol", bms?.protocol || "—"],
-    ["Last update", formatDate(bms?.captured_at)],
-    ["Last poll error", bms?.last_error || "—"],
-    ["Last error time", formatDate(bms?.last_error_at)],
-    ["Pack voltage", display(bms?.voltage, " V", 2)],
-    ["Current", display(bms?.current_a, " A", 2)],
-    ["SOC", display(bms?.capacity_percent, "%", 0)],
-    ["Cells", bms?.cells?.length ? String(bms.cells.length) : "—"],
-    ["Cell delta", display(bms?.delta_cell_voltage, " V", 3)],
-    ["Raw command", textValue(rawSummary?.command) || "—"],
-    ["Raw keys", rawKeys],
-    ["Error", bms?.error || "—"],
+    [i18n.t("diagnostics.mode"), bms?.enabled ? bms.source : i18n.t("status.disabled")],
+    [i18n.t("diagnostics.connection"), bms?.connected ? i18n.t("status.connected") : i18n.t("status.offline")],
+    [i18n.t("diagnostics.address"), bms?.address || "—"],
+    [i18n.t("diagnostics.name"), bms?.name || "—"],
+    [i18n.t("diagnostics.protocol"), bms?.protocol || "—"],
+    [i18n.t("overview.lastUpdate"), formatDate(bms?.captured_at, i18n)],
+    [i18n.t("diagnostics.lastPollError"), bms?.last_error || "—"],
+    [i18n.t("diagnostics.lastErrorTime"), formatDate(bms?.last_error_at, i18n)],
+    [i18n.t("diagnostics.packVoltage"), display(bms?.voltage, " V", 2)],
+    [i18n.t("label.current"), display(bms?.current_a, " A", 2)],
+    [i18n.t("label.soc"), display(bms?.capacity_percent, "%", 0)],
+    [i18n.t("diagnostics.cells"), bms?.cells?.length ? String(bms.cells.length) : "—"],
+    [i18n.t("diagnostics.cellDelta"), display(bms?.delta_cell_voltage, " V", 3)],
+    [i18n.t("diagnostics.rawCommand"), textValue(rawSummary?.command) || "—"],
+    [i18n.t("diagnostics.rawKeys"), rawKeys],
+    [i18n.t("diagnostics.error"), bms?.error || "—"],
   ];
 }
 
 const rawCommands = ["QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG"] as const;
-type RatingRow = { key: string; label: string; unit?: string; digits?: number };
+type RatingRow = { key: string; labelKey: TranslationKey; unit?: string; digits?: number };
 const ratingRows: RatingRow[] = [
-  { key: "grid_rating_voltage", label: "Grid voltage", unit: " V" },
-  { key: "grid_rating_current", label: "Grid current", unit: " A" },
-  { key: "output_rating_voltage", label: "Output voltage", unit: " V" },
-  { key: "output_rating_frequency", label: "Output frequency", unit: " Hz" },
-  { key: "output_rating_current", label: "Output current", unit: " A" },
-  { key: "output_rating_apparent_power_va", label: "Apparent power", unit: " VA", digits: 0 },
-  { key: "output_rating_active_power_w", label: "Active power", unit: " W", digits: 0 },
-  { key: "battery_rating_voltage", label: "Battery voltage", unit: " V" },
-  { key: "battery_recharge_voltage", label: "Recharge voltage", unit: " V" },
-  { key: "battery_under_voltage", label: "Low battery voltage", unit: " V" },
-  { key: "battery_bulk_voltage", label: "Bulk charge voltage", unit: " V" },
-  { key: "battery_float_voltage", label: "Float charge voltage", unit: " V" },
-  { key: "battery_type", label: "Battery type" },
-  { key: "max_ac_charge_current", label: "Max AC charge", unit: " A", digits: 0 },
-  { key: "max_charge_current", label: "Max total charge", unit: " A", digits: 0 },
-  { key: "input_voltage_range", label: "Input range" },
-  { key: "output_source_priority", label: "Output priority" },
-  { key: "charger_source_priority", label: "Charger priority" },
+  { key: "grid_rating_voltage", labelKey: "rating.grid_rating_voltage", unit: " V" },
+  { key: "grid_rating_current", labelKey: "rating.grid_rating_current", unit: " A" },
+  { key: "output_rating_voltage", labelKey: "rating.output_rating_voltage", unit: " V" },
+  { key: "output_rating_frequency", labelKey: "rating.output_rating_frequency", unit: " Hz" },
+  { key: "output_rating_current", labelKey: "rating.output_rating_current", unit: " A" },
+  { key: "output_rating_apparent_power_va", labelKey: "rating.output_rating_apparent_power_va", unit: " VA", digits: 0 },
+  { key: "output_rating_active_power_w", labelKey: "rating.output_rating_active_power_w", unit: " W", digits: 0 },
+  { key: "battery_rating_voltage", labelKey: "rating.battery_rating_voltage", unit: " V" },
+  { key: "battery_recharge_voltage", labelKey: "rating.battery_recharge_voltage", unit: " V" },
+  { key: "battery_under_voltage", labelKey: "rating.battery_under_voltage", unit: " V" },
+  { key: "battery_bulk_voltage", labelKey: "rating.battery_bulk_voltage", unit: " V" },
+  { key: "battery_float_voltage", labelKey: "rating.battery_float_voltage", unit: " V" },
+  { key: "battery_type", labelKey: "rating.battery_type" },
+  { key: "max_ac_charge_current", labelKey: "rating.max_ac_charge_current", unit: " A", digits: 0 },
+  { key: "max_charge_current", labelKey: "rating.max_charge_current", unit: " A", digits: 0 },
+  { key: "input_voltage_range", labelKey: "rating.input_voltage_range" },
+  { key: "output_source_priority", labelKey: "rating.output_source_priority" },
+  { key: "charger_source_priority", labelKey: "rating.charger_source_priority" },
 ];
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -1568,48 +1548,53 @@ function errorValue(value: unknown): string | null {
   return typeof record?.error === "string" ? record.error : null;
 }
 
-const ratingValueLabels: Record<string, Record<string, string>> = {
-  battery_type: { "0": "AGM", "1": "Flooded", "2": "User-defined", AGM: "AGM", FLOODED: "Flooded", USER: "User-defined" },
-  input_voltage_range: { UPS: "UPS / narrow input range", APL: "Appliance / wide input range", "0": "Appliance / wide input range", "1": "UPS / narrow input range" },
-  output_source_priority: { "0": "Utility first", "00": "Utility first", "1": "Solar first", "01": "Solar first", "2": "SBU priority", "02": "SBU priority", utility: "Utility first", solar: "Solar first", sbu: "SBU priority" },
-  charger_source_priority: { "0": "Utility first", "00": "Utility first", "1": "Solar first", "01": "Solar first", "2": "Solar and utility", "02": "Solar and utility", "3": "Solar only", "03": "Solar only", solar_first: "Solar first", solar_utility: "Solar and utility", solar: "Solar only" },
+const ratingValueLabelKeys: Record<string, Record<string, TranslationKey>> = {
+  battery_type: { "0": "rating.agm", "1": "rating.flooded", "2": "rating.userDefined", AGM: "rating.agm", FLOODED: "rating.flooded", USER: "rating.userDefined" },
+  input_voltage_range: { UPS: "rating.upsRange", APL: "rating.applianceRange", "0": "rating.applianceRange", "1": "rating.upsRange" },
+  output_source_priority: { "0": "rating.utilityFirst", "00": "rating.utilityFirst", "1": "rating.solarFirst", "01": "rating.solarFirst", "2": "rating.sbuPriority", "02": "rating.sbuPriority", utility: "rating.utilityFirst", solar: "rating.solarFirst", sbu: "rating.sbuPriority" },
+  charger_source_priority: { "0": "rating.utilityFirst", "00": "rating.utilityFirst", "1": "rating.solarFirst", "01": "rating.solarFirst", "2": "rating.solarAndUtility", "02": "rating.solarAndUtility", "3": "rating.solarOnly", "03": "rating.solarOnly", solar_first: "rating.solarFirst", solar_utility: "rating.solarAndUtility", solar: "rating.solarOnly" },
 };
 
-const inverterModeLabels: Record<string, string> = {
-  P: "Power on",
-  S: "Standby",
-  L: "Line mode",
-  B: "Battery mode",
-  F: "Fault mode",
-  H: "Power saving mode",
+const inverterModeLabelKeys: Record<string, TranslationKey> = {
+  P: "mode.P",
+  S: "mode.S",
+  L: "mode.L",
+  B: "mode.B",
+  F: "mode.F",
+  H: "mode.H",
 };
 
-function formatRating(key: string, value: unknown, unit = "", digits = 1) {
+function ratingValueLabel(key: string, raw: string, i18n: I18n) {
+  const labelKey = ratingValueLabelKeys[key]?.[raw] || ratingValueLabelKeys[key]?.[raw.toUpperCase()];
+  return labelKey ? i18n.t(labelKey) : null;
+}
+
+function formatRating(key: string, value: unknown, unit = "", digits = 1, i18n: I18n) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
-  const label = ratingValueLabels[key]?.[raw] || ratingValueLabels[key]?.[raw.toUpperCase()];
+  const label = ratingValueLabel(key, raw, i18n);
   if (label && (key === "output_source_priority" || key === "charger_source_priority")) return `${label} (${raw})`;
   if (label) return label;
   if (!unit) return String(value);
   return display(typeof value === "number" || typeof value === "string" ? value : null, unit, digits);
 }
 
-function formatInverterMode(value: string | null | undefined) {
-  if (!value) return "Unknown";
+function formatInverterMode(value: string | null | undefined, i18n: I18n) {
+  if (!value) return i18n.t("status.unknown");
   const raw = value.trim();
-  const label = inverterModeLabels[raw.toUpperCase()];
-  return label ? `${label} (${raw})` : `Unknown (${raw})`;
+  const labelKey = inverterModeLabelKeys[raw.toUpperCase()];
+  return labelKey ? `${i18n.t(labelKey)} (${raw})` : i18n.t("mode.unknownRaw", { raw });
 }
 
-function formatRawValue(value: unknown) {
+function formatRawValue(value: unknown, i18n: I18n) {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "string") return value;
   const error = errorValue(value);
-  return error ? `Error: ${error}` : JSON.stringify(value);
+  return error ? i18n.t("diagnostics.rawError", { error }) : JSON.stringify(value);
 }
 
-function formatDate(value: string | null | undefined) {
-  return value ? new Date(value).toLocaleString() : "No live update yet";
+function formatDate(value: string | null | undefined, i18n: I18n) {
+  return i18n.date(value);
 }
 
 createRoot(document.getElementById("root")!).render(<BrowserRouter><App /></BrowserRouter>);

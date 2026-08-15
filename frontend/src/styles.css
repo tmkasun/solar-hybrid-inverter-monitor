@@ -116,6 +116,32 @@ button:disabled {
     font-size: .9rem;
 }
 
+.header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.language-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #aebfca;
+    font-size: .86rem;
+}
+
+.language-select select {
+    min-height: 36px;
+    border: 1px solid #45606f;
+    border-radius: 7px;
+    background: #0f1d24;
+    color: #edf6fa;
+    padding: 7px 30px 7px 10px;
+    font: inherit;
+    font-weight: 650;
+}
+
 .connection.ok {
     background: #193f34;
     color: #75e2b4;
