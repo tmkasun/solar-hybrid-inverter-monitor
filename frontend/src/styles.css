@@ -24,6 +24,12 @@ main {
     padding: 16px 14px 28px;
 }
 
+main.full-page-shell {
+    max-width: none;
+    min-height: 100vh;
+    padding: 10px;
+}
+
 header,
 .section-title {
     display: flex;
@@ -63,7 +69,8 @@ nav {
 }
 
 button,
-nav a {
+nav a,
+.button-link {
     flex: 0 0 auto;
     min-height: 42px;
     border: 0;
@@ -85,8 +92,16 @@ nav a {
 button:hover,
 button.active,
 nav a:hover,
-nav a.active {
+nav a.active,
+.button-link:hover {
     background: #2d708f;
+}
+
+.button-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
 }
 
 button:disabled {
@@ -523,7 +538,18 @@ pre {
     font-weight: 750;
 }
 
+.analysis-panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .zoom-reset {
+    min-height: 34px;
+    padding: 7px 10px;
+}
+
+.analysis-panel-actions .button-link {
     min-height: 34px;
     padding: 7px 10px;
 }
@@ -541,6 +567,40 @@ pre {
 .analysis-chart .recharts-brush-texts text {
     fill: #aebfca;
     font-size: .72rem;
+}
+
+.analysis-page.fullscreen {
+    min-height: calc(100vh - 20px);
+    display: flex;
+    flex-direction: column;
+}
+
+.analysis-page.fullscreen .section-title,
+.analysis-page.fullscreen .analysis-controls,
+.analysis-page.fullscreen .analysis-chart {
+    margin-bottom: 10px;
+}
+
+.analysis-page.fullscreen .section-title h2 {
+    margin-bottom: 6px;
+}
+
+.analysis-page.fullscreen .section-title p {
+    margin: 0;
+}
+
+.analysis-page.fullscreen .analysis-chart {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.analysis-page.fullscreen .analysis-chart .chart,
+.analysis-page.fullscreen .analysis-chart .empty-chart {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 460px;
 }
 
 .empty-chart {

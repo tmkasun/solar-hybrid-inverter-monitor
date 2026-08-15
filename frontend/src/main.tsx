@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import * as THREE from "three";
 import { api } from "./api";
@@ -12,6 +12,8 @@ const energySystemBackground = new URL("./assets/energy-system-background.png", 
 const settingsPriorityDiagram = new URL("./assets/settings-priority-diagram.png", import.meta.url).href;
 
 function App() {
+  const routeLocation = useLocation();
+  const graphFullPage = routeLocation.pathname === "/analysis/fullscreen";
   const [status, setStatus] = useState<Status | null>(null);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
@@ -62,14 +64,15 @@ function App() {
     }
   };
 
-  return <main>
-    <header><div><h1>Sako Energy</h1><p>Local inverter monitoring and control</p></div><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? "Inverter connected" : "Inverter offline"}</div></header>
-    <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{route.label}</NavLink>)}</nav>
+  return <main className={graphFullPage ? "full-page-shell" : ""}>
+    {!graphFullPage && <header><div><h1>Sako Energy</h1><p>Local inverter monitoring and control</p></div><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? "Inverter connected" : "Inverter offline"}</div></header>}
+    {!graphFullPage && <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{route.label}</NavLink>)}</nav>}
     {message && <div className="notice">{message}<button onClick={() => setMessage("")}>×</button></div>}
     <Routes>
       <Route path="/" element={<Navigate to="/overview" replace />} />
       <Route path="/overview" element={<Overview status={status} />} />
       <Route path="/analysis" element={<DataAnalysis />} />
+      <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage />} />
       <Route path="/settings" element={<Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} />} />
       <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
@@ -97,7 +100,7 @@ function Overview({ status }: { status: Status | null }) {
   </section>;
 }
 
-function DataAnalysis() {
+function DataAnalysis({ fullPage = false }: { fullPage?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const searchKey = searchParams.toString();
   const analysisState = useMemo(() => parseAnalysisQuery(searchParams), [searchKey]);
@@ -128,6 +131,8 @@ function DataAnalysis() {
   const activeZoomRange = zoomRange && chartData.length > 0 ? clampZoomRange(zoomRange, chartData.length) : null;
   const zoomLabel = activeZoomRange ? zoomRangeLabel(chartData, activeZoomRange) : "Full selected range";
   const customRangeError = customDateRangeError(customStart, customEnd);
+  const fullPagePath = pathWithSearch("/analysis/fullscreen", searchParams);
+  const analysisPath = pathWithSearch("/analysis", searchParams);
 
   const loadHistory = useCallback(async () => {
     if (historyLoadInFlight.current) {
@@ -192,13 +197,14 @@ function DataAnalysis() {
     updateAnalysisState({ ...analysisState, selectedMetricIds });
   };
 
-  return <section className="analysis-page">
+  return <section className={fullPage ? "analysis-page fullscreen" : "analysis-page"}>
     <div className="section-title">
-      <div><h2>Data analysis</h2><p>Compare inverter telemetry by parameter group and time range.</p></div>
+      <div><h2>{fullPage ? `${activeGroup.label} trend` : "Data analysis"}</h2><p>{fullPage ? `${samples.length} samples · ${timeRangeLabel(analysisState.range)} · ${zoomLabel}` : "Compare inverter telemetry by parameter group and time range."}</p></div>
       <div className="analysis-actions">
         <label className={autoRefreshEnabled ? "auto-refresh-toggle active" : "auto-refresh-toggle"}><input type="checkbox" checked={autoRefreshEnabled} onChange={event => setAutoRefreshEnabled(event.target.checked)} /><span>Auto refresh</span></label>
         <select aria-label="Auto refresh interval" value={autoRefreshIntervalMs} disabled={!autoRefreshEnabled} onChange={event => setAutoRefreshIntervalMs(Number(event.target.value))}>{autoRefreshIntervals.map(interval => <option key={interval.ms} value={interval.ms}>{interval.label}</option>)}</select>
         <button className="quiet" disabled={loading} onClick={() => void loadHistory()}>{loading ? "Loading..." : "Refresh"}</button>
+        {fullPage && <Link className="button-link quiet" to={analysisPath}>Back</Link>}
       </div>
     </div>
     <div className="analysis-controls panel">
@@ -218,14 +224,14 @@ function DataAnalysis() {
       })}</div></div>
     </div>
     {error && <p className="error">{error}</p>}
-    <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{stat.metric.label}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>Avg {formatMetricValue(stat.metric, stat.average)} · Min {formatMetricValue(stat.metric, stat.min)} · Max {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>
-    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{activeGroup.label} trend</h3><span>{samples.length} samples · {timeRangeLabel(analysisState.range)} · {zoomLabel}</span></div><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>Reset zoom</button></div>
+    {!fullPage && <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{stat.metric.label}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>Avg {formatMetricValue(stat.metric, stat.average)} · Min {formatMetricValue(stat.metric, stat.min)} · Max {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>}
+    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{activeGroup.label} trend</h3><span>{samples.length} samples · {timeRangeLabel(analysisState.range)} · {zoomLabel}</span></div><div className="analysis-panel-actions"><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>Reset zoom</button>{!fullPage && <Link className="button-link quiet" to={fullPagePath}>Full page</Link>}</div></div>
       {loading && samples.length === 0 ? <div className="empty-chart">Loading telemetry history...</div> : chartData.length === 0 ? <div className="empty-chart">No telemetry samples found for this range.</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/><Tooltip formatter={(value, name) => {
         const metric = metricDefinitions[String(name)];
         return [metric ? formatMetricValue(metric, value as number) : value, metric?.label || name];
       }} /><Legend formatter={(value) => metricDefinitions[String(value)]?.label || value} />{selectedMetrics.map(metric => <Line key={metric.id} type="monotone" dataKey={metric.id} stroke={metric.color} dot={false} strokeWidth={2.4} connectNulls />)}<Brush dataKey="at" height={32} stroke="#55b964" fill="#10202a" travellerWidth={12} startIndex={activeZoomRange?.startIndex ?? 0} endIndex={activeZoomRange?.endIndex ?? chartData.length - 1} onChange={range => setZoomRange(normalizeZoomRange(range, chartData.length))} /></LineChart></ResponsiveContainer></div>}
     </div>
-    <details className="panel analysis-table-panel" open={rawDataOpen} onToggle={event => setRawDataOpen(event.currentTarget.open)}><summary><span>Raw telemetry data</span><small>{rawDataOpen ? `${rawRows.length} of ${samples.length} rows` : "Collapsed by default"}</small></summary>
+    {!fullPage && <details className="panel analysis-table-panel" open={rawDataOpen} onToggle={event => setRawDataOpen(event.currentTarget.open)}><summary><span>Raw telemetry data</span><small>{rawDataOpen ? `${rawRows.length} of ${samples.length} rows` : "Collapsed by default"}</small></summary>
       <div className="raw-data-tools">
         <label><span>Filter</span><input value={rawFilter} onChange={event => setRawFilter(event.target.value)} placeholder="Time or value" /></label>
         <label><span>Sort by</span><select value={rawSort.key} onChange={event => setRawSort(current => ({ ...current, key: event.target.value }))}><option value="captured_at">Captured time</option>{selectedMetrics.map(metric => <option key={metric.id} value={metric.id}>{metric.label}</option>)}</select></label>
@@ -233,7 +239,7 @@ function DataAnalysis() {
         {(rawFilter || rawSort.key !== "captured_at" || rawSort.direction !== "desc") && <button className="quiet" onClick={() => { setRawFilter(""); setRawSort({ key: "captured_at", direction: "desc" }); }}>Clear</button>}
       </div>
       {rawRows.length === 0 ? <p>No telemetry rows match the current filter.</p> : <div className="analysis-table-wrap"><table className="analysis-table"><thead><tr><th>Captured</th>{selectedMetrics.map(metric => <th key={metric.id}>{metric.label}</th>)}</tr></thead><tbody>{rawRows.map(row => <tr key={row.captured_at}><td>{formatDate(row.captured_at)}</td>{selectedMetrics.map(metric => <td key={metric.id}>{formatMetricValue(metric, metricValue(row, metric.id))}</td>)}</tr>)}</tbody></table></div>}
-    </details>
+    </details>}
   </section>;
 }
 
@@ -444,6 +450,11 @@ function analysisSearchParams(state: AnalysisUrlState) {
     params.set("range", state.range.param);
   }
   return params;
+}
+
+function pathWithSearch(path: string, params: URLSearchParams) {
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 function historyRequestForRange(range: AnalysisRangeState): HistoryRequest {
