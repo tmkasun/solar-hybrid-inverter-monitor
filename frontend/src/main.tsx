@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import * as THREE from "three";
 import { api } from "./api";
 import type { HistoryRequest } from "./api";
 import type { BmsStatus, Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
@@ -9,7 +10,6 @@ import "./styles.css";
 
 const energySystemBackground = new URL("./assets/energy-system-background.png", import.meta.url).href;
 const settingsPriorityDiagram = new URL("./assets/settings-priority-diagram.png", import.meta.url).href;
-const batteryPackBmsDiagram = new URL("./assets/battery-pack-bms-diagram.png", import.meta.url).href;
 
 function App() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -598,7 +598,12 @@ function MetricCard({ className, icon, title, value, details, onClick, ariaLabel
   return <article className={`metric-card ${className}`}>{content}</article>;
 }
 
-const batteryCellPins = [
+type FlowState = "charging" | "discharging" | "idle";
+type BatteryAnchorPosition = { left: string; top: string };
+type BatteryAnchorPositions = { cells: BatteryAnchorPosition[]; bms: BatteryAnchorPosition };
+
+const defaultBatteryAnchors: BatteryAnchorPositions = {
+  cells: [
   { left: "16%", top: "39%" },
   { left: "25.5%", top: "36.5%" },
   { left: "35%", top: "34.5%" },
@@ -607,31 +612,14 @@ const batteryCellPins = [
   { left: "63.5%", top: "30.5%" },
   { left: "73%", top: "30.5%" },
   { left: "82.5%", top: "32%" },
-];
-
-const batteryCellWirePaths = [
-  "M 37 43 C 34 41 30 40 25 39",
-  "M 38 43 C 35 41 34 39 32 38",
-  "M 40 43 C 40 41 40 39 40 37",
-  "M 42 43 C 45 41 47 39 49 36.5",
-  "M 44 43 C 50 41 54 38.5 58 36",
-  "M 46 43 C 56 41 62 38 67 35.5",
-  "M 47 43 C 62 41 70 38 76 35",
-  "M 48 43 C 67 41 78 38 85 35.5",
-];
-
-const batteryCellWireDots = [
-  { left: "25%", top: "69.3%" },
-  { left: "32%", top: "67.6%" },
-  { left: "40%", top: "65.8%" },
-  { left: "49%", top: "64.9%" },
-  { left: "58%", top: "64%" },
-  { left: "67%", top: "63.1%" },
-  { left: "76%", top: "62.2%" },
-  { left: "85%", top: "63.1%" },
-];
+  ],
+  bms: { left: "29%", top: "74%" },
+};
 
 function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bms?: BmsStatus | null; onClose: () => void }) {
+  const [anchors, setAnchors] = useState<BatteryAnchorPositions>(defaultBatteryAnchors);
+  const updateAnchors = useCallback((next: BatteryAnchorPositions) => setAnchors(next), []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKeyDown);
@@ -645,9 +633,10 @@ function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bm
   const batteryPercent = Math.min(100, Math.max(0, numeric(values.battery_capacity_percent)));
   const current = finiteNumber(bms?.current_a);
   const balanceCurrent = finiteNumber(bms?.balance_current_a);
-  const flowState = current === null || Math.abs(current) < 0.05 ? "idle" : current > 0 ? "charging" : "discharging";
+  const flowState: FlowState = current === null || Math.abs(current) < 0.05 ? "idle" : current > 0 ? "charging" : "discharging";
   const flowLabel = flowState === "charging" ? "Charging" : flowState === "discharging" ? "Discharging" : "Idle";
   const balanceState = balanceCurrent === null || Math.abs(balanceCurrent) < 0.005 ? "Idle" : balanceCurrent > 0 ? "Balancing charge" : "Balancing discharge";
+  const bmsOnline = Boolean(bms?.connected && !bms.stale);
   const packStats: Array<[string, string]> = [
     ["Pack", display(bms?.voltage ?? values.battery_voltage, " V", 2)],
     ["SOC", bms?.capacity_percent !== null && bms?.capacity_percent !== undefined ? display(bms.capacity_percent, "%", 0) : `${batteryPercent.toFixed(0)}%`],
@@ -678,29 +667,225 @@ function BatteryDetailModal({ values, bms, onClose }: { values: StatusValues; bm
       </div>
       <div className="battery-detail-layout">
         <div className={`battery-detail-stage ${flowState}`}>
-          <img src={batteryPackBmsDiagram} alt="" aria-hidden="true" />
-          <svg className="battery-wire-overlay" viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">
-            <path className={`battery-power-wire negative ${flowState !== "idle" ? "active" : ""}`} d="M 18 38 C 16 43 20 48 30 49 H 54 C 66 49 75 43 83 37" />
-            <path className={`battery-power-wire positive ${flowState !== "idle" ? "active" : ""}`} d="M 87 31 C 84 36 76 41 64 42 H 52 C 46 42 42 43 38 45" />
-            {batteryCellWirePaths.map((path, index) => <path key={index} className={`battery-cell-wire ${bms?.connected && !bms.stale ? "active" : ""}`} d={path} style={{ animationDelay: `${index * -0.13}s` }} />)}
-          </svg>
-          {batteryCellWireDots.map((position, index) => <span key={index} className="battery-wire-dot" style={position} />)}
+          <BatteryPack3D flowState={flowState} bmsOnline={bmsOnline} onAnchorsChange={updateAnchors} />
           {cells.map((cell, index) => {
             const voltage = finiteNumber(cell.voltage);
             const edge = voltage !== null && voltage === minVoltage ? "low" : voltage !== null && voltage === maxVoltage ? "high" : "";
             const wireResistance = cell.wire_resistance_mohm ?? cell.resistance_mohm;
-            return <div className={`battery-cell-pin ${edge}`} key={cell.index} style={batteryCellPins[index]}>
+            return <div className={`battery-cell-pin ${edge}`} key={cell.index} style={anchors.cells[index] || defaultBatteryAnchors.cells[index]}>
               <span>Cell {cell.index}</span>
               <strong>{display(cell.voltage, " V", 3)}</strong>
               <small>wire {display(wireResistance, " mΩ", 3)}</small>
             </div>;
           })}
-          <div className="bms-module-pin"><span>BMS</span><strong>{balanceState}</strong><small>{display(bms?.balance_current_a, " A", 2)}</small></div>
+          <div className="bms-module-pin" style={anchors.bms}><span>BMS</span><strong>{balanceState}</strong><small>{display(bms?.balance_current_a, " A", 2)}</small></div>
         </div>
         <div className="battery-detail-stats">{packStats.map(([label, value]) => <BmsStat key={label} label={label} value={value} />)}</div>
       </div>
     </section>
   </div>;
+}
+
+function BatteryPack3D({ flowState, bmsOnline, onAnchorsChange }: { flowState: FlowState; bmsOnline: boolean; onAnchorsChange: (positions: BatteryAnchorPositions) => void }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf8fafc);
+    const camera = new THREE.PerspectiveCamera(35, 16 / 9, 0.1, 100);
+    camera.position.set(5.2, 3.9, 5.6);
+    camera.lookAt(0, 0.6, 0.05);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xcbd5e1, 2.5));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.7);
+    keyLight.position.set(3.5, 5.5, 4.5);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0x9fd7ff, 1.15);
+    fillLight.position.set(-3.5, 2.5, 3.5);
+    scene.add(fillLight);
+
+    const blue = new THREE.MeshStandardMaterial({ color: 0x1458c8, roughness: 0.42, metalness: 0.12 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.58, metalness: 0.05 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0xd8dee6, roughness: 0.22, metalness: 0.85 });
+    const wood = new THREE.MeshStandardMaterial({ color: 0xc69a6b, roughness: 0.72, metalness: 0.03 });
+    const red = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.38, metalness: 0.06 });
+    const wireRed = new THREE.MeshStandardMaterial({ color: 0xff3f6c, emissive: 0x4f0014, roughness: 0.34, metalness: 0.02 });
+    const cableBlack = new THREE.MeshStandardMaterial({ color: 0x101826, roughness: 0.45, metalness: 0.04 });
+    const glowRed = new THREE.MeshStandardMaterial({ color: 0xff6b83, emissive: 0xff174d, emissiveIntensity: 1.2 });
+    const glowOrange = new THREE.MeshStandardMaterial({ color: 0xff9f1c, emissive: 0xff7a00, emissiveIntensity: 1.3 });
+
+    const meshes: THREE.Object3D[] = [];
+    const movingDots: Array<{ mesh: THREE.Mesh; curve: THREE.CatmullRomCurve3; speed: number; offset: number; kind: "cell" | "power" }> = [];
+    const cellAnchors: THREE.Vector3[] = [];
+    const cellXs = Array.from({ length: 8 }, (_, index) => (index - 3.5) * 0.82);
+
+    const addMesh = (geometry: THREE.BufferGeometry, material: THREE.Material | THREE.Material[], position: THREE.Vector3Tuple, castShadow = true) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      meshes.push(mesh);
+      return mesh;
+    };
+    const addBox = (size: THREE.Vector3Tuple, material: THREE.Material, position: THREE.Vector3Tuple) => addMesh(new THREE.BoxGeometry(...size), material, position);
+    const addCylinder = (radius: number, height: number, material: THREE.Material, position: THREE.Vector3Tuple) => addMesh(new THREE.CylinderGeometry(radius, radius, height, 28), material, position);
+    const makeCurve = (points: THREE.Vector3Tuple[]) => new THREE.CatmullRomCurve3(points.map(point => new THREE.Vector3(...point)));
+    const addCable = (points: THREE.Vector3Tuple[], radius: number, material: THREE.Material, segments = 64) => {
+      const curve = makeCurve(points);
+      const tube = addMesh(new THREE.TubeGeometry(curve, segments, radius, 10, false), material, [0, 0, 0]);
+      tube.castShadow = true;
+      return curve;
+    };
+    const addMovingDot = (curve: THREE.CatmullRomCurve3, kind: "cell" | "power", offset: number, material: THREE.Material, radius: number, speed: number) => {
+      const dot = addMesh(new THREE.SphereGeometry(radius, 16, 16), material, [0, 0, 0], false) as THREE.Mesh;
+      movingDots.push({ mesh: dot, curve, speed, offset, kind });
+    };
+
+    addBox([7.2, 0.08, 2.35], new THREE.MeshStandardMaterial({ color: 0xe6edf3, roughness: 0.7 }), [0, -0.05, 0]);
+    addBox([0.22, 1.85, 2.35], wood, [-3.48, 0.78, 0]);
+    addBox([0.22, 1.85, 2.35], wood, [3.48, 0.78, 0]);
+    addBox([7.15, 0.22, 0.14], wood, [0, 0.12, 1.14]);
+    addBox([7.15, 0.18, 0.12], wood, [0, 0.16, -1.12]);
+
+    for (const [index, x] of cellXs.entries()) {
+      addBox([0.68, 1.38, 1.86], blue, [x, 0.7, 0]);
+      addBox([0.64, 0.08, 1.76], black, [x, 1.43, 0]);
+      addBox([0.18, 0.08, 0.12], new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.35 }), [x, 1.52, 0.84]);
+      addCylinder(0.12, 0.16, metal, [x - 0.18, 1.58, -0.46]);
+      addCylinder(0.12, 0.16, metal, [x + 0.18, 1.58, 0.46]);
+      addCylinder(0.055, 0.18, metal, [x - 0.18, 1.72, -0.46]);
+      addCylinder(0.055, 0.18, metal, [x + 0.18, 1.72, 0.46]);
+      cellAnchors.push(new THREE.Vector3(x, 2.15 + (index % 2) * 0.04, 0.12));
+    }
+    addBox([6.4, 0.07, 0.13], metal, [0, 1.75, -0.46]);
+    addBox([6.4, 0.07, 0.13], metal, [0, 1.75, 0.46]);
+
+    const bmsAnchor = new THREE.Vector3(-1.85, 0.95, 1.38);
+    addBox([1.35, 0.82, 0.22], black, [-1.55, 0.52, 1.2]);
+    addBox([0.18, 0.54, 0.08], metal, [-0.78, 0.55, 1.35]);
+
+    const negativeCurve = addCable([[-3.05, 1.67, 0.46], [-3.35, 1.08, 1.08], [-2.65, 0.32, 1.48], [-2.15, 0.45, 1.37]], 0.055, cableBlack, 72);
+    const positiveCurve = addCable([[3.05, 1.67, 0.46], [3.32, 1.05, 1.18], [1.55, 0.28, 1.52], [-1.0, 0.35, 1.4]], 0.06, red, 96);
+    addMovingDot(negativeCurve, "power", 0.15, glowOrange, 0.055, 0.28);
+    addMovingDot(positiveCurve, "power", 0.65, glowOrange, 0.055, 0.28);
+
+    for (const [index, x] of cellXs.entries()) {
+      const bmsX = -2.08 + index * 0.14;
+      const curve = addCable([[x, 1.05, 0.98], [x - 0.04, 0.78, 1.28], [Math.min(x, -0.25), 0.52, 1.44], [bmsX, 0.64, 1.36]], 0.014, wireRed, 42);
+      addMovingDot(curve, "cell", index * 0.12, glowRed, 0.026, 0.42);
+    }
+
+    const frameId = { current: 0 };
+    let lastAnchorJson = "";
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const clock = new THREE.Clock();
+
+    const projectAnchors = () => {
+      const width = container.clientWidth || 1;
+      const height = container.clientHeight || 1;
+      const project = (point: THREE.Vector3): BatteryAnchorPosition => {
+        const projected = point.clone().project(camera);
+        return {
+          left: `${((projected.x + 1) / 2) * 100}%`,
+          top: `${((1 - projected.y) / 2) * 100}%`,
+        };
+      };
+      if (!width || !height) return;
+      const rawCells = cellAnchors.map(project);
+      if (width < 620) {
+        const rowLefts = [
+          [8, 34, 60, 86],
+          [20, 45, 70, 94],
+        ];
+        const cells = rawCells.map((_, index) => ({
+          left: `${rowLefts[index % 2][Math.floor(index / 2)]}%`,
+          top: `${20 + (index % 2) * 38}%`,
+        }));
+        const next = { cells, bms: { left: "19%", top: "84%" } };
+        const json = JSON.stringify(next);
+        if (json !== lastAnchorJson) {
+          lastAnchorJson = json;
+          onAnchorsChange(next);
+        }
+        return;
+      }
+      const leftValues = rawCells.map(anchor => Number(anchor.left.replace("%", "")));
+      for (let index = 1; index < leftValues.length; index += 1) {
+        leftValues[index] = Math.max(leftValues[index], leftValues[index - 1] + 8.4);
+      }
+      const overflow = Math.max(0, leftValues[leftValues.length - 1] - 88);
+      const cells = rawCells.map((anchor, index) => {
+        const row = index % 2;
+        const column = Math.floor(index / 2);
+        return {
+          left: `${Math.min(92, Math.max(8, leftValues[index] - overflow))}%`,
+          top: `${16 + row * 20 + column * 2}%`,
+        };
+      });
+      const next = { cells, bms: project(bmsAnchor) };
+      const json = JSON.stringify(next);
+      if (json !== lastAnchorJson) {
+        lastAnchorJson = json;
+        onAnchorsChange(next);
+      }
+    };
+
+    const resize = () => {
+      const width = container.clientWidth || 960;
+      const height = container.clientHeight || 540;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      projectAnchors();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize();
+
+    const animate = () => {
+      const elapsed = clock.getElapsedTime();
+      for (const dot of movingDots) {
+        const active = dot.kind === "cell" ? bmsOnline : flowState !== "idle";
+        dot.mesh.visible = active && !reducedMotion;
+        if (!dot.mesh.visible) continue;
+        let t = (elapsed * dot.speed + dot.offset) % 1;
+        if (dot.kind === "power" && flowState === "discharging") t = 1 - t;
+        dot.mesh.position.copy(dot.curve.getPoint(t));
+      }
+      renderer.render(scene, camera);
+      projectAnchors();
+      frameId.current = requestAnimationFrame(animate);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(frameId.current);
+      observer.disconnect();
+      renderer.dispose();
+      container.removeChild(renderer.domElement);
+      for (const object of meshes) {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of materials) material.dispose();
+        }
+      }
+    };
+  }, [bmsOnline, flowState, onAnchorsChange]);
+
+  return <div className="battery-3d-canvas" ref={containerRef} aria-hidden="true" />;
 }
 
 function OverviewRow({ icon, label, value, note, progress, compact = false }: { icon: IconName; label: string; value: string; note?: string; progress?: number; compact?: boolean }) {
