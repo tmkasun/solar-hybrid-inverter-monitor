@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -193,6 +193,71 @@ def test_database_sample_interval_is_independent_from_live_poll(monkeypatch):
     state_stub.last_stored_sample_at = captured_at
     assert main_module.State.should_store_sample(state_stub, captured_at.replace(second=14)) is False
     assert main_module.State.should_store_sample(state_stub, captured_at.replace(second=15)) is True
+
+
+@pytest.mark.asyncio
+async def test_poll_retries_discovery_after_startup_usb_miss(monkeypatch, tmp_path):
+    class RecoveringInverter:
+        def __init__(self):
+            self.commands = []
+
+        async def command(self, command):
+            self.commands.append(command)
+            replies = {
+                "QPI": "PI30",
+                "QID": "SAKO-RECOVERED",
+                "QVFW": "VERFW:00001.00",
+                "QVFW2": "VERFW2:00001.00",
+                "QPIRI": "230.0 30.0 230.0 50.0 13.0 3000 2400 48.0 54.0 42.0 56.4 54.0 AGM 30 60 UPS 01 01",
+                "QFLAG": "Eabjkuvxyz",
+                "QPIGS": "230.0 50.0 230.0 50.0 0550 0440 22 390 51.20 012 86 31 4.2 116.0 51.10 000 01000000",
+                "QMOD": "L",
+                "QPIWS": "00000000000000000000000000000000",
+            }
+            return replies[command]
+
+    previous_inverter = state.inverter
+    previous_storage = state.storage
+    previous_diagnostics = state.diagnostics
+    previous_latest_inverter = state.latest_inverter
+    previous_latest = state.latest
+    previous_last_discovery_attempt_at = state.last_discovery_attempt_at
+    recovering = RecoveringInverter()
+    monkeypatch.setattr(main_module, "settings", SimpleNamespace(
+        discovery_retry_seconds=60,
+        db_sample_seconds=15,
+        bms_poll_seconds=30,
+        bms_timeout_seconds=25,
+        poll_seconds=5,
+    ))
+    try:
+        state.inverter = recovering
+        state.storage = Storage(str(tmp_path / "recover.db"))
+        state.diagnostics = {"QPI": {"error": "USB inverter 0665:5161 not found"}}
+        await state.update_latest({
+            "connected": False,
+            "mode": None,
+            "status": {},
+            "warnings": None,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "error": "inverter has not identified as PIP-compatible",
+        })
+        state.last_discovery_attempt_at = datetime.now(timezone.utc) - timedelta(seconds=61)
+
+        await state.poll()
+
+        assert state.latest["connected"] is True
+        assert state.latest["error"] is None
+        assert recovering.commands[:6] == ["QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG"]
+        assert recovering.commands[-3:] == ["QPIGS", "QMOD", "QPIWS"]
+    finally:
+        state.storage.close()
+        state.inverter = previous_inverter
+        state.storage = previous_storage
+        state.diagnostics = previous_diagnostics
+        state.latest_inverter = previous_latest_inverter
+        state.latest = previous_latest
+        state.last_discovery_attempt_at = previous_last_discovery_attempt_at
 
 
 def test_bms_poll_loop_schedules_from_poll_start_time():

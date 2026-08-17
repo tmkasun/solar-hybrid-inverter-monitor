@@ -312,7 +312,7 @@ def normalize_mppsolar_status(data: dict[str, Any], *, address: str = "", name: 
     payload = _find_measurement_payload(data)
     cells: list[BmsCell] = []
     for index in range(1, max(1, cell_count) + 1):
-        voltage = _number(payload, f"Voltage_Cell{index:02d}", f"Cell{index:02d}_Voltage", f"cell_{index:02d}_voltage")
+        voltage = _number(payload, *_cell_voltage_names(index))
         wire_resistance_mohm = _cell_wire_resistance_mohm(payload, index)
         if voltage is not None and voltage > 0:
             cells.append(BmsCell(
@@ -322,7 +322,8 @@ def normalize_mppsolar_status(data: dict[str, Any], *, address: str = "", name: 
                 wire_resistance_mohm=_round(wire_resistance_mohm, 4),
             ))
 
-    voltage = _number(payload, "Battery_Voltage", "Pack_Voltage", "Total_Voltage")
+    voltage = _number(payload, "Battery_Voltage", "Pack_Voltage", "Total_Voltage", "BatteryVoltage", "PackVoltage",
+                      "TotalVoltage", "Voltage")
     if voltage is None and cells:
         voltage = sum(cell.voltage for cell in cells)
     current_a = _signed_current(payload)
@@ -351,9 +352,10 @@ def normalize_mppsolar_status(data: dict[str, Any], *, address: str = "", name: 
         voltage=voltage,
         current_a=current_a,
         power_w=power_w,
-        capacity_percent=_number(payload, "Percent_Remain", "Battery_Capacity", "State_Of_Charge", "SOC"),
-        remaining_capacity_ah=_number(payload, "Capacity_Remain", "Remaining_Capacity"),
-        nominal_capacity_ah=_number(payload, "Nominal_Capacity", "Battery_Nominal_Capacity"),
+        capacity_percent=_number(payload, "Percent_Remain", "Battery_Capacity", "State_Of_Charge", "SOC",
+                                 "SOC_Percent", "Battery_SOC", "Charge_Percent"),
+        remaining_capacity_ah=_number(payload, "Capacity_Remain", "Remaining_Capacity", "RemainingCapacity"),
+        nominal_capacity_ah=_number(payload, "Nominal_Capacity", "Battery_Nominal_Capacity", "NominalCapacity"),
         cycle_count=_integer(payload, "Cycle_Count", "Cycles"),
         cycle_capacity_ah=_number(payload, "Cycle_Capacity"),
         balance_current_a=_number(payload, "Balance_Current", "Current_Balancer"),
@@ -364,7 +366,7 @@ def normalize_mppsolar_status(data: dict[str, Any], *, address: str = "", name: 
         raw_summary=raw_summary(payload),
     )
     if not cells and all(value is None for value in (status.voltage, status.current_a, status.capacity_percent)):
-        raise BmsError("jkbms output did not contain recognized cell or battery data")
+        raise BmsError(f"jkbms output did not contain recognized cell or battery data; {raw_key_summary(data, payload)}")
     return status
 
 
@@ -477,18 +479,87 @@ def raw_summary(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def raw_key_summary(data: dict[str, Any], payload: dict[str, Any] | None = None) -> str:
+    top_level_keys = _safe_key_list(data)
+    if payload is data or payload is None:
+        return f"keys={top_level_keys}"
+    return f"top_level_keys={top_level_keys}; payload_keys={_safe_key_list(payload)}"
+
+
+def _safe_key_list(data: dict[str, Any], limit: int = 30) -> list[str]:
+    return sorted(str(key) for key in data if str(key) != "raw_response")[:limit]
+
+
 def _find_measurement_payload(data: dict[str, Any]) -> dict[str, Any]:
+    return _find_measurement_payload_recursive(data) or _find_command_payload_recursive(data) or data
+
+
+def _find_measurement_payload_recursive(data: dict[str, Any]) -> dict[str, Any] | None:
     if _contains_measurements(data):
         return data
     for value in data.values():
-        if isinstance(value, dict) and _contains_measurements(value):
-            return value
-    return data
+        if isinstance(value, dict):
+            payload = _find_measurement_payload_recursive(value)
+            if payload is not None:
+                return payload
+    return None
+
+
+def _find_command_payload_recursive(data: dict[str, Any]) -> dict[str, Any] | None:
+    if "_command" in data or "raw_response" in data:
+        return data
+    dict_values = [value for value in data.values() if isinstance(value, dict)]
+    if len(dict_values) == 1:
+        return _find_command_payload_recursive(dict_values[0]) or dict_values[0]
+    for value in dict_values:
+        payload = _find_command_payload_recursive(value)
+        if payload is not None:
+            return payload
+    return None
 
 
 def _contains_measurements(data: dict[str, Any]) -> bool:
     normalized = {_normalized_key(key) for key in data}
-    return bool(normalized & {"batteryvoltage", "percentremain", "voltagecell01", "currentcharge", "currentdischarge"})
+    return bool(normalized & {
+        "batteryvoltage",
+        "packvoltage",
+        "totalvoltage",
+        "percentremain",
+        "batterysoc",
+        "soc",
+        "stateofcharge",
+        "voltagecell01",
+        "voltagecell1",
+        "cell01voltage",
+        "cell1voltage",
+        "cellvoltage01",
+        "cellvoltage1",
+        "currentcharge",
+        "chargecurrent",
+        "currentdischarge",
+        "dischargecurrent",
+        "batterycurrent",
+        "packcurrent",
+    })
+
+
+def _cell_voltage_names(index: int) -> tuple[str, ...]:
+    return (
+        f"Voltage_Cell{index:02d}",
+        f"Voltage_Cell{index}",
+        f"VoltageCell{index:02d}",
+        f"VoltageCell{index}",
+        f"Cell{index:02d}_Voltage",
+        f"Cell{index}_Voltage",
+        f"Cell{index:02d}Voltage",
+        f"Cell{index}Voltage",
+        f"CellVoltage{index:02d}",
+        f"CellVoltage{index}",
+        f"cell_{index:02d}_voltage",
+        f"cell_{index}_voltage",
+        f"cell_voltage_{index:02d}",
+        f"cell_voltage_{index}",
+    )
 
 
 def _number(data: dict[str, Any], *names: str) -> float | None:

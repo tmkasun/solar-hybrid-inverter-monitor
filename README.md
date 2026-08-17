@@ -59,6 +59,16 @@ If the earlier Docker deployment is still running on the Pi, stop it with `docke
 
 The API logs connection setup, protocol probes, failed USB commands (including malformed reply bytes), polling failures, settings changes, and database errors. It never logs passwords, session IDs, or CSRF tokens.
 
+If the Pi was manually restarted after becoming unreachable, first compare the previous boot's end time with the incident time. `journalctl -u sako-inverter-api -b -1` only shows the API service; a clean `Stopping Sako inverter API...` line means systemd intentionally stopped the service during shutdown/reboot, not that the API was killed by the kernel. Check the whole previous boot for the real cause:
+
+```sh
+sudo journalctl -b -1 -e --no-pager
+sudo journalctl -k -b -1 --no-pager | grep -Ei 'oom|out of memory|killed process|under-voltage|voltage|usb|reset|ext4|mmc|i/o error'
+sudo journalctl -b -1 --no-pager | grep -Ei 'reboot|shutdown|watchdog|thermal|thrott|NetworkManager|sshd|sako-inverter'
+```
+
+`USB inverter 0665:5161 not found` means the HID device was absent when the API probed it. The service retries inverter discovery every `INVERTER_DISCOVERY_RETRY_SECONDS`, so a temporary USB/inverter reset can recover without restarting the API.
+
 ## JK-BMS Bluetooth telemetry
 
 The app can read a JK-BMS over Bluetooth as a read-only second telemetry source. BMS values become authoritative for battery SOC, voltage, current, cell voltages, and temperatures when fresh; if Bluetooth polling fails, the dashboard falls back to the inverter battery values.

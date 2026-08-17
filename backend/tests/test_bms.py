@@ -130,6 +130,39 @@ def test_normalizer_prefers_computed_power_over_raw_jkbms_power_field():
     assert status.power_w == 53.4
 
 
+def test_normalizer_finds_nested_mppsolar_payload():
+    status = normalize_mppsolar_status(
+        {
+            "result": {
+                "command": {
+                    "getCellData": {
+                        "Cell 1 Voltage": [3.252, "V"],
+                        "Cell 2 Voltage": [3.255, "V"],
+                        "Pack Voltage": [26.028, "V"],
+                        "Battery SOC": [15, "%"],
+                    }
+                }
+            }
+        },
+        cell_count=2,
+    )
+
+    assert status.voltage == 26.028
+    assert status.capacity_percent == 15
+    assert [cell.voltage for cell in status.cells] == [3.252, 3.255]
+
+
+def test_normalizer_reports_keys_when_payload_has_no_measurements():
+    with pytest.raises(BmsError, match=r"top_level_keys=\['getCellData'\].*payload_keys=\['_command', 'raw_only'\]"):
+        normalize_mppsolar_status({
+            "getCellData": {
+                "_command": ["getCellData", ""],
+                "raw_only": ["", ""],
+                "raw_response": ["blob", ""],
+            }
+        })
+
+
 def test_parse_json_output_reports_invalid_json():
     with pytest.raises(BmsError, match="did not return JSON"):
         parse_json_output("not json")

@@ -72,6 +72,7 @@ class State:
         self.task: asyncio.Task | None = None
         self.bms_task: asyncio.Task | None = None
         self.last_stored_sample_at: datetime | None = None
+        self.last_discovery_attempt_at: datetime | None = None
         logger.info("Inverter state initialized in %s mode; BMS mode=%s", settings.mode, settings.bms_mode)
 
     def initial_bms_status(self) -> BmsStatus:
@@ -101,7 +102,9 @@ class State:
         return self.latest
 
     async def poll(self) -> None:
-        if not isinstance(self.diagnostics.get("QPI"), str) or not self.diagnostics["QPI"].startswith("PI"):
+        if not self.inverter_identified() and await self.retry_discovery_if_due():
+            logger.info("Inverter protocol discovery recovered; resuming telemetry polling")
+        if not self.inverter_identified():
             if self.latest["error"] != "inverter has not identified as PIP-compatible":
                 logger.error("Poll skipped: inverter has not identified as PIP-compatible")
             latest = await self.update_latest({
@@ -203,10 +206,30 @@ class State:
             or (captured_at - self.last_stored_sample_at).total_seconds() >= settings.db_sample_seconds
         )
 
+    def inverter_identified(self) -> bool:
+        return isinstance(self.diagnostics.get("QPI"), str) and self.diagnostics["QPI"].startswith("PI")
+
+    def discovery_retry_due(self, now: datetime | None = None) -> bool:
+        if self.inverter_identified():
+            return False
+        now = now or datetime.now(timezone.utc)
+        return (
+            self.last_discovery_attempt_at is None
+            or (now - self.last_discovery_attempt_at).total_seconds() >= settings.discovery_retry_seconds
+        )
+
+    async def retry_discovery_if_due(self) -> bool:
+        if not self.discovery_retry_due():
+            return False
+        logger.info("Retrying inverter protocol discovery")
+        await self.discover()
+        return self.inverter_identified()
+
     async def discover(self) -> dict[str, Any]:
         commands = ("QPI", "QID", "QVFW", "QVFW2", "QPIRI", "QFLAG")
         result: dict[str, Any] = {}
         logger.info("Discovering inverter protocol and capabilities")
+        self.last_discovery_attempt_at = datetime.now(timezone.utc)
         try:
             result["QPI"] = await self.inverter.command("QPI")
         except InverterError as exc:
