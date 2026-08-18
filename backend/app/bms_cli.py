@@ -126,11 +126,12 @@ async def execute(args: argparse.Namespace) -> int:
 def make_bms(args: argparse.Namespace):
     if args.operation in ("raw", "info") or args.backend == "cli":
         return JkbmsCliBms(args.address, args.name, args.protocol, args.cell_count, args.timeout, args.command, args.retries, args.retry_delay)
-    ble = JkbmsBleBms(args.address, args.name, args.protocol, args.cell_count, args.timeout)
+    ble = JkbmsBleBms(args.address, args.name, args.protocol, args.cell_count, args.timeout,
+                      bootstrap_seconds=settings.bms_ble_bootstrap_seconds)
     if args.backend == "ble":
         return ble
     cli = JkbmsCliBms(args.address, args.name, args.protocol, args.cell_count, args.timeout, args.command, args.retries, args.retry_delay)
-    return JkbmsAutoBms(ble, cli)
+    return JkbmsAutoBms(ble, cli, settings.bms_ble_retry_seconds)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

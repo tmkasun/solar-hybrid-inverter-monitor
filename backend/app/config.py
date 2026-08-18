@@ -30,6 +30,8 @@ class Settings:
     bms_retry_delay_seconds: float = float(os.getenv("BMS_RETRY_DELAY_SECONDS", "2"))
     bms_jkbms_command: str = os.getenv("BMS_JKBMS_COMMAND", "")
     bms_jkbms_backend: str = os.getenv("BMS_JKBMS_BACKEND", "auto")
+    bms_ble_retry_seconds: float = float(os.getenv("BMS_BLE_RETRY_SECONDS", "300"))
+    bms_ble_bootstrap_seconds: float = float(os.getenv("BMS_BLE_BOOTSTRAP_SECONDS", "1"))
 
 
 settings = Settings()

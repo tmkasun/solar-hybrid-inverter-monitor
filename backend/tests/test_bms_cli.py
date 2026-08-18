@@ -17,8 +17,9 @@ def test_bms_cli_scan_json(monkeypatch, capsys):
 
 def test_bms_cli_status_json(monkeypatch, capsys):
     class FakeBms:
-        def __init__(self, *args):
+        def __init__(self, *args, **kwargs):
             self.args = args
+            self.kwargs = kwargs
 
         async def status(self):
             return await SimulatorBms(2).status()

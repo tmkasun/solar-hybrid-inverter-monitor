@@ -362,7 +362,7 @@ async def test_jkbms_ble_status_reuses_persistent_connection():
         async def disconnect(self):
             self.is_connected = False
 
-    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FakeBleakClient)
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FakeBleakClient, bootstrap_seconds=0)
     try:
         first = await bms.status()
         second = await bms.status()
@@ -389,7 +389,7 @@ async def test_jkbms_ble_wraps_client_connect_errors_as_bms_errors():
         async def connect(self):
             raise RuntimeError("No Bluetooth adapters found.")
 
-    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FailingBleakClient)
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FailingBleakClient, bootstrap_seconds=0)
 
     with pytest.raises(BmsError, match="No Bluetooth adapters found"):
         await bms.status()
@@ -432,7 +432,7 @@ async def test_jkbms_ble_reports_disconnect_before_status_frame():
         async def disconnect(self):
             self.is_connected = False
 
-    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, DisconnectingBleakClient)
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, DisconnectingBleakClient, bootstrap_seconds=0)
 
     with pytest.raises(BmsError, match="disconnected before a status frame"):
         await bms.status()
@@ -447,6 +447,7 @@ def test_bms_from_settings_uses_auto_backend_by_default():
         bms_cell_count=8,
         bms_timeout_seconds=25,
         bms_jkbms_backend="auto",
+        bms_ble_bootstrap_seconds=1,
         bms_jkbms_command="jkbms",
         bms_retries=1,
         bms_retry_delay_seconds=0,
@@ -464,6 +465,7 @@ def test_bms_from_settings_can_force_ble_backend():
         bms_cell_count=8,
         bms_timeout_seconds=25,
         bms_jkbms_backend="ble",
+        bms_ble_bootstrap_seconds=1,
     ))
 
     assert isinstance(selected, JkbmsBleBms)
@@ -496,6 +498,80 @@ async def test_jkbms_auto_falls_back_to_cli_when_ble_adapter_is_unavailable():
     assert status.connected is True
     assert ble.closed is True
     assert cli.closed is False
+
+
+@pytest.mark.asyncio
+async def test_jkbms_auto_skips_ble_during_retry_cooldown():
+    now = 1000.0
+
+    class FailingBle:
+        calls = 0
+
+        async def status(self):
+            self.calls += 1
+            raise BmsError("JK-BMS BLE status timed out after 25s")
+
+        async def close(self):
+            return None
+
+    class WorkingCli:
+        calls = 0
+
+        async def status(self):
+            self.calls += 1
+            return await SimulatorBms(2).status()
+
+        async def close(self):
+            return None
+
+    ble = FailingBle()
+    cli = WorkingCli()
+    auto = JkbmsAutoBms(ble, cli, ble_retry_seconds=300, clock=lambda: now)
+
+    await auto.status()
+    await auto.status()
+
+    assert ble.calls == 1
+    assert cli.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_jkbms_auto_retries_ble_after_retry_cooldown():
+    now = 1000.0
+
+    class RecoveringBle:
+        calls = 0
+
+        async def status(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise BmsError("JK-BMS BLE status timed out after 25s")
+            return await SimulatorBms(2).status()
+
+        async def close(self):
+            return None
+
+    class WorkingCli:
+        calls = 0
+
+        async def status(self):
+            self.calls += 1
+            return await SimulatorBms(2).status()
+
+        async def close(self):
+            return None
+
+    ble = RecoveringBle()
+    cli = WorkingCli()
+    auto = JkbmsAutoBms(ble, cli, ble_retry_seconds=300, clock=lambda: now)
+
+    await auto.status()
+    now += 301
+    await auto.status()
+
+    assert ble.calls == 2
+    assert cli.calls == 1
+    assert auto.last_ble_failure_at is None
 
 
 def test_bms_from_settings_can_force_cli_backend():

@@ -89,6 +89,8 @@ BMS_TIMEOUT_SECONDS=25
 BMS_RETRIES=2
 BMS_RETRY_DELAY_SECONDS=2
 BMS_JKBMS_BACKEND=auto
+BMS_BLE_RETRY_SECONDS=300
+BMS_BLE_BOOTSTRAP_SECONDS=1
 ```
 
 `INVERTER_POLL_SECONDS` controls live telemetry reads and WebSocket updates.
@@ -98,9 +100,12 @@ to history.
 first run `../scripts/bms-cli scan --json`, then verify with
 `../scripts/bms-cli status --address <address> --protocol JK02 --json`.
 `BMS_JKBMS_BACKEND=auto` tries persistent BLE first and falls back to the
-pinned `jkbms` command if Bleak cannot use the adapter. Use `ble` to force
-persistent BLE only, or `cli` to shell out per poll. For CLI diagnostics,
-`status` and `monitor` accept `--backend auto|ble|cli` too.
+pinned `jkbms` command if Bleak cannot use the adapter or no BLE frame arrives.
+`BMS_BLE_RETRY_SECONDS` controls how long to stay on CLI before trying BLE
+again. `BMS_BLE_BOOTSTRAP_SECONDS` waits after the device-info command before
+requesting cell data. Use `ble` to force persistent BLE only, or `cli` to shell
+out per poll. For CLI diagnostics, `status` and `monitor` accept
+`--backend auto|ble|cli` too.
 
 If `bluetoothctl list` prints nothing and `/sys/class/bluetooth/` has no
 `hci*` entry, BlueZ is running but Linux has not created a Bluetooth adapter.
