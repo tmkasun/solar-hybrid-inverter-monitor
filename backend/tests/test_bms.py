@@ -10,13 +10,18 @@ from app.bms import (
     BmsCell,
     BmsError,
     BmsStatus,
+    JkbmsBleBms,
     JkbmsCliBms,
     apply_bms_to_status,
+    bms_from_settings,
     bms_history_metrics,
+    build_jkbms_command,
     compact_process_detail,
+    parse_jkbms_ble_cell_info,
     normalize_mppsolar_status,
     parse_json_output,
     scan_bluetooth_devices,
+    validate_jkbms_ble_frame,
 )
 
 
@@ -57,6 +62,43 @@ def sample_mppsolar_payload():
     }
 
 
+def sample_jkbms_ble_frame_24s():
+    frame = bytearray(300)
+    frame[:4] = b"\x55\xaa\xeb\x90"
+    frame[4] = 0x02
+    frame[5] = 0x8C
+
+    def set_u16(offset, value):
+        frame[offset:offset + 2] = int(value).to_bytes(2, "little", signed=False)
+
+    def set_i16(offset, value):
+        frame[offset:offset + 2] = int(value).to_bytes(2, "little", signed=True)
+
+    def set_u32(offset, value):
+        frame[offset:offset + 4] = int(value).to_bytes(4, "little", signed=False)
+
+    def set_i32(offset, value):
+        frame[offset:offset + 4] = int(value).to_bytes(4, "little", signed=True)
+
+    cell_voltages = [3322, 3324, 3323, 3326, 3321, 3324, 3325, 3323]
+    for index, millivolts in enumerate(cell_voltages):
+        set_u16(6 + index * 2, millivolts)
+        set_u16(64 + index * 2, 420 + index)
+    set_u32(118, 26588)
+    set_i32(126, -6250)
+    set_i16(130, 294)
+    set_i16(132, 298)
+    set_i16(134, 321)
+    set_i16(138, 10)
+    frame[141] = 78
+    set_u32(142, 93600)
+    set_u32(146, 120000)
+    set_u32(150, 42)
+    set_u32(154, 3120000)
+    frame[299] = sum(frame[:299]) & 0xFF
+    return bytes(frame)
+
+
 def test_normalizes_mppsolar_jkbms_status():
     status = normalize_mppsolar_status(
         sample_mppsolar_payload(),
@@ -81,6 +123,53 @@ def test_normalizes_mppsolar_jkbms_status():
     assert status.max_cell_voltage == 3.326
     assert status.delta_cell_voltage == 0.005
     assert "raw_response" not in status.raw_summary["keys"]
+
+
+def test_builds_jkbms_ble_commands_with_sum_crc():
+    cell_info = build_jkbms_command(0x96)
+    device_info = build_jkbms_command(0x97)
+
+    assert cell_info.hex() == "aa5590eb96000000000000000000000000000010"
+    assert device_info.hex() == "aa5590eb97000000000000000000000000000011"
+
+
+def test_rejects_jkbms_ble_frame_with_invalid_crc():
+    frame = bytearray(sample_jkbms_ble_frame_24s())
+    frame[299] ^= 0xFF
+
+    with pytest.raises(BmsError, match="CRC check failed"):
+        validate_jkbms_ble_frame(bytes(frame))
+
+
+def test_parses_jkbms_ble_24s_cell_info_frame():
+    status = parse_jkbms_ble_cell_info(
+        sample_jkbms_ble_frame_24s(),
+        address="C8:47:8C:E2:A0:2E",
+        name="JK-B1A20S15P",
+        protocol="JK02",
+        cell_count=8,
+    )
+
+    assert status.connected is True
+    assert status.source == "jkbms-ble"
+    assert status.raw_summary["layout"] == "24s"
+    assert status.address == "C8:47:8C:E2:A0:2E"
+    assert status.voltage == 26.588
+    assert status.current_a == -6.25
+    assert status.power_w == -166.2
+    assert status.capacity_percent == 78
+    assert status.remaining_capacity_ah == 93.6
+    assert status.nominal_capacity_ah == 120
+    assert status.cycle_count == 42
+    assert status.cycle_capacity_ah == 3120
+    assert status.balance_current_a == 0.01
+    assert status.battery_t1_c == 29.4
+    assert status.battery_t2_c == 29.8
+    assert status.mos_temperature_c == 32.1
+    assert len(status.cells) == 8
+    assert status.cells[0].voltage == 3.322
+    assert status.cells[0].wire_resistance_mohm == 0.42
+    assert status.delta_cell_voltage == 0.005
 
 
 def test_normalizer_allows_missing_optional_fields():
@@ -219,6 +308,101 @@ TypeError: object of type 'NoneType' has no len()
 
     assert bms._read_status().capacity_percent == 78
     assert len(attempts) == 2
+
+
+@pytest.mark.asyncio
+async def test_jkbms_ble_status_reuses_persistent_connection():
+    frame = sample_jkbms_ble_frame_24s()
+
+    class FakeCharacteristic:
+        def __init__(self, properties):
+            self.uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
+            self.properties = properties
+
+    class FakeService:
+        uuid = "0000ffe0-0000-1000-8000-00805f9b34fb"
+        characteristics = [
+            FakeCharacteristic(["write-without-response"]),
+            FakeCharacteristic(["notify"]),
+        ]
+
+    class FakeBleakClient:
+        instances = []
+
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+            self.is_connected = False
+            self.services = [FakeService()]
+            self.connects = 0
+            self.writes = []
+            self.notify_callback = None
+            FakeBleakClient.instances.append(self)
+
+        async def connect(self):
+            self.connects += 1
+            self.is_connected = True
+
+        async def start_notify(self, characteristic, callback):
+            self.notify_callback = callback
+
+        async def stop_notify(self, characteristic):
+            self.notify_callback = None
+
+        async def write_gatt_char(self, characteristic, data, response=False):
+            self.writes.append(bytes(data))
+            if data[4] == 0x96:
+                self.notify_callback(characteristic, frame[:90])
+                self.notify_callback(characteristic, frame[90:220])
+                self.notify_callback(characteristic, frame[220:])
+
+        async def disconnect(self):
+            self.is_connected = False
+
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FakeBleakClient)
+    try:
+        first = await bms.status()
+        second = await bms.status()
+    finally:
+        await bms.close()
+
+    client = FakeBleakClient.instances[0]
+    assert first.capacity_percent == 78
+    assert second.capacity_percent == 78
+    assert len(FakeBleakClient.instances) == 1
+    assert client.connects == 1
+    assert [command[4] for command in client.writes] == [0x97, 0x96]
+
+
+def test_bms_from_settings_uses_persistent_ble_by_default():
+    selected = bms_from_settings(SimpleNamespace(
+        bms_mode="jkbms",
+        bms_bluetooth_address="AA:BB:CC:DD:EE:FF",
+        bms_name="JK-BMS",
+        bms_protocol="JK02",
+        bms_cell_count=8,
+        bms_timeout_seconds=25,
+        bms_jkbms_backend="ble",
+    ))
+
+    assert isinstance(selected, JkbmsBleBms)
+
+
+def test_bms_from_settings_can_force_cli_backend():
+    selected = bms_from_settings(SimpleNamespace(
+        bms_mode="jkbms",
+        bms_bluetooth_address="AA:BB:CC:DD:EE:FF",
+        bms_name="JK-BMS",
+        bms_protocol="JK02",
+        bms_cell_count=8,
+        bms_timeout_seconds=25,
+        bms_jkbms_backend="cli",
+        bms_jkbms_command="jkbms",
+        bms_retries=1,
+        bms_retry_delay_seconds=0,
+    ))
+
+    assert isinstance(selected, JkbmsCliBms)
 
 
 def test_compacts_traceback_to_final_error_line():

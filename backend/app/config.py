@@ -29,6 +29,7 @@ class Settings:
     bms_retries: int = int(os.getenv("BMS_RETRIES", "2"))
     bms_retry_delay_seconds: float = float(os.getenv("BMS_RETRY_DELAY_SECONDS", "2"))
     bms_jkbms_command: str = os.getenv("BMS_JKBMS_COMMAND", "")
+    bms_jkbms_backend: str = os.getenv("BMS_JKBMS_BACKEND", "ble")
 
 
 settings = Settings()

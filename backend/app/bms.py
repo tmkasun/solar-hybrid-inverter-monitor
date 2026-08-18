@@ -1,8 +1,8 @@
 """Read-only JK-BMS telemetry helpers.
 
-The first hardware implementation deliberately shells out to the mpp-solar
-``jkbms`` command because that is the known-good path for this battery pack.
-The rest of the app only sees a normalized, stable BMS status shape.
+The API prefers a persistent BLE connection for hardware polling and keeps the
+older mpp-solar ``jkbms`` command path available as a fallback backend. The
+rest of the app only sees a normalized, stable BMS status shape.
 """
 from __future__ import annotations
 
@@ -22,6 +22,14 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+JK_BMS_SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb"
+JK_BMS_CHARACTERISTIC_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
+JK_BMS_FRAME_HEADER = b"\x55\xaa\xeb\x90"
+JK_BMS_COMMAND_HEADER = b"\xaa\x55\x90\xeb"
+JK_BMS_CELL_INFO_COMMAND = 0x96
+JK_BMS_DEVICE_INFO_COMMAND = 0x97
+JK_BMS_MIN_FRAME_SIZE = 300
+JK_BMS_MAX_FRAME_SIZE = 400
 
 
 class BmsError(RuntimeError):
@@ -157,6 +165,193 @@ class SimulatorBms(BaseBms):
         )
 
 
+class JkbmsBleBms(BaseBms):
+    def __init__(self, address: str, name: str = "", protocol: str = "JK02", cell_count: int = 8,
+                 timeout_seconds: float = 25, client_factory: Callable[..., Any] | None = None):
+        self.address = address.strip()
+        self.name = name.strip()
+        self.protocol = protocol.strip() or "JK02"
+        self.cell_count = cell_count
+        self.timeout_seconds = timeout_seconds
+        self.client_factory = client_factory
+        self.client: Any | None = None
+        self.notify_char: Any | None = None
+        self.write_char: Any | None = None
+        self.frame_buffer = bytearray()
+        self.latest_status: BmsStatus | None = None
+        self.latest_status_monotonic = 0.0
+        self.status_version = 0
+        self.connected = False
+        self._lock = asyncio.Lock()
+        self._status_event = asyncio.Event()
+
+    async def status(self) -> BmsStatus:
+        if not self.address:
+            raise BmsError("BMS_BLUETOOTH_ADDRESS is required for BMS_MODE=jkbms")
+        async with self._lock:
+            await self._ensure_connected()
+            now = time.monotonic()
+            if self.latest_status and now - self.latest_status_monotonic <= self.timeout_seconds:
+                return self.latest_status
+            starting_version = self.status_version
+            await self._request_cell_info()
+        try:
+            await asyncio.wait_for(self._wait_for_new_status(starting_version), timeout=self.timeout_seconds)
+        except asyncio.TimeoutError as exc:
+            await self._disconnect()
+            raise BmsError(f"JK-BMS BLE status timed out after {self.timeout_seconds:g}s") from exc
+        assert self.latest_status is not None
+        return self.latest_status
+
+    async def close(self) -> None:
+        await self._disconnect()
+
+    async def _wait_for_new_status(self, starting_version: int) -> None:
+        while self.status_version <= starting_version:
+            self._status_event.clear()
+            await self._status_event.wait()
+
+    async def _ensure_connected(self) -> None:
+        if self._client_is_connected():
+            return
+        await self._disconnect()
+        try:
+            client = self._new_client()
+            self.client = client
+            logger.info("Connecting to JK-BMS BLE device %s", self.address)
+            await asyncio.wait_for(client.connect(), timeout=self.timeout_seconds)
+            if not self._client_is_connected(client):
+                raise BmsError(f"failed to connect to JK-BMS BLE device {self.address}")
+            self.connected = True
+            self.write_char, self.notify_char = await self._characteristics(client)
+            await client.start_notify(self.notify_char, self._notification)
+            logger.info("JK-BMS BLE connected; requesting device and cell info")
+            await self._write_command(JK_BMS_DEVICE_INFO_COMMAND)
+            await self._write_command(JK_BMS_CELL_INFO_COMMAND)
+        except Exception:
+            await self._disconnect()
+            raise
+
+    def _new_client(self) -> Any:
+        if self.client_factory is not None:
+            return self.client_factory(self.address, disconnected_callback=self._on_disconnect)
+        try:
+            from bleak import BleakClient
+        except ModuleNotFoundError as exc:
+            raise BmsError("bleak is not installed; run scripts/pi-api-install to install mppsolar[ble]") from exc
+        return BleakClient(self.address, disconnected_callback=self._on_disconnect)
+
+    async def _characteristics(self, client: Any) -> tuple[Any, Any]:
+        services = getattr(client, "services", None)
+        if callable(getattr(client, "get_services", None)):
+            services = await client.get_services()
+
+        characteristics: list[Any] = []
+        for service in services or []:
+            service_uuid = str(getattr(service, "uuid", "")).lower()
+            if service_uuid not in (JK_BMS_SERVICE_UUID, "ffe0", "0xffe0"):
+                continue
+            characteristics.extend(getattr(service, "characteristics", []) or [])
+        if not characteristics and services is not None:
+            for service in services:
+                characteristics.extend(getattr(service, "characteristics", []) or [])
+
+        ffe1 = [char for char in characteristics if _uuid_matches(getattr(char, "uuid", ""), JK_BMS_CHARACTERISTIC_UUID)]
+        write_char = next((char for char in ffe1 if _char_supports(char, "write-without-response")), None)
+        write_char = write_char or next((char for char in ffe1 if _char_supports(char, "write")), None)
+        notify_char = next((char for char in ffe1 if _char_supports(char, "notify")), None)
+        if not write_char:
+            write_char = JK_BMS_CHARACTERISTIC_UUID
+        if not notify_char:
+            notify_char = JK_BMS_CHARACTERISTIC_UUID
+        return write_char, notify_char
+
+    async def _request_cell_info(self) -> None:
+        await self._write_command(JK_BMS_CELL_INFO_COMMAND)
+
+    async def _write_command(self, command: int) -> None:
+        if self.client is None or self.write_char is None:
+            raise BmsError("JK-BMS BLE client is not connected")
+        await self.client.write_gatt_char(self.write_char, build_jkbms_command(command), response=False)
+
+    def _notification(self, _: Any, data: bytearray | bytes | memoryview) -> None:
+        try:
+            status = self._accept_notification(bytes(data))
+        except BmsError as exc:
+            logger.warning("Dropped invalid JK-BMS BLE frame: %s", exc)
+            return
+        if status is not None:
+            self.latest_status = status
+            self.latest_status_monotonic = time.monotonic()
+            self.status_version += 1
+            self._status_event.set()
+
+    def _accept_notification(self, data: bytes) -> BmsStatus | None:
+        if not data:
+            return None
+        combined = bytes(self.frame_buffer) + data
+        header_at = combined.rfind(JK_BMS_FRAME_HEADER)
+        if header_at != -1:
+            combined = combined[header_at:]
+        elif not self.frame_buffer:
+            return None
+        if len(combined) > JK_BMS_MAX_FRAME_SIZE:
+            self.frame_buffer.clear()
+            raise BmsError("frame exceeded maximum BLE response size")
+        self.frame_buffer = bytearray(combined)
+        if len(self.frame_buffer) < JK_BMS_MIN_FRAME_SIZE:
+            return None
+        frame = bytes(self.frame_buffer[:JK_BMS_MIN_FRAME_SIZE])
+        self.frame_buffer.clear()
+        frame_type = frame[4]
+        if frame_type != 0x02:
+            return None
+        return parse_jkbms_ble_cell_info(
+            frame,
+            address=self.address,
+            name=self.name,
+            protocol=self.protocol,
+            cell_count=self.cell_count,
+        )
+
+    async def _disconnect(self) -> None:
+        client = self.client
+        notify_char = self.notify_char
+        self.client = None
+        self.notify_char = None
+        self.write_char = None
+        self.frame_buffer.clear()
+        self.connected = False
+        if client is None:
+            return
+        try:
+            if notify_char is not None and self._client_is_connected(client):
+                await client.stop_notify(notify_char)
+        except Exception:
+            logger.debug("Failed to stop JK-BMS BLE notifications", exc_info=True)
+        try:
+            if self._client_is_connected(client):
+                await client.disconnect()
+        except Exception:
+            logger.debug("Failed to disconnect JK-BMS BLE client", exc_info=True)
+
+    def _client_is_connected(self, client: Any | None = None) -> bool:
+        client = client if client is not None else self.client
+        if client is None:
+            return False
+        connected = getattr(client, "is_connected", False)
+        return connected() if callable(connected) else bool(connected)
+
+    def _on_disconnect(self, _: Any) -> None:
+        logger.warning("JK-BMS BLE device disconnected")
+        self.connected = False
+        self.client = None
+        self.notify_char = None
+        self.write_char = None
+        self.frame_buffer.clear()
+        self._status_event.set()
+
+
 class JkbmsCliBms(BaseBms):
     def __init__(self, address: str, name: str = "", protocol: str = "JK02", cell_count: int = 8,
                  timeout_seconds: float = 25, command: str = "", retries: int = 1,
@@ -243,20 +438,182 @@ def compact_process_detail(output: str | None) -> str:
     return next((line for line in reversed(lines) if line.startswith(("TypeError:", "ValueError:", "RuntimeError:", "Exception:"))), lines[-1])
 
 
+def build_jkbms_command(command: int) -> bytes:
+    frame = bytearray(20)
+    frame[:4] = JK_BMS_COMMAND_HEADER
+    frame[4] = command & 0xFF
+    frame[19] = jkbms_crc(frame[:19])
+    return bytes(frame)
+
+
+def jkbms_crc(data: bytes | bytearray | memoryview) -> int:
+    return sum(data) & 0xFF
+
+
+def parse_jkbms_ble_cell_info(frame: bytes, *, address: str = "", name: str = "", protocol: str = "JK02",
+                              cell_count: int = 8) -> BmsStatus:
+    validate_jkbms_ble_frame(frame)
+    preferred_layout = "32s" if "32" in protocol.lower() or cell_count > 24 else "24s"
+    candidates = [
+        _parse_jk02_layout(frame, preferred_layout, address, name, protocol, cell_count),
+        _parse_jk02_layout(frame, "24s" if preferred_layout == "32s" else "32s", address, name, protocol, cell_count),
+    ]
+    plausible = [status for status in candidates if _plausible_jkbms_status(status)]
+    if plausible:
+        return plausible[0]
+    if candidates[0].cells or candidates[0].voltage is not None or candidates[0].capacity_percent is not None:
+        return candidates[0]
+    raise BmsError("JK-BMS BLE frame did not contain recognized cell or battery data")
+
+
+def validate_jkbms_ble_frame(frame: bytes) -> None:
+    if len(frame) < JK_BMS_MIN_FRAME_SIZE:
+        raise BmsError(f"frame was shorter than {JK_BMS_MIN_FRAME_SIZE} bytes")
+    frame = frame[:JK_BMS_MIN_FRAME_SIZE]
+    if not frame.startswith(JK_BMS_FRAME_HEADER):
+        raise BmsError("frame did not start with JK-BMS header")
+    computed_crc = jkbms_crc(frame[:JK_BMS_MIN_FRAME_SIZE - 1])
+    if frame[JK_BMS_MIN_FRAME_SIZE - 1] != computed_crc:
+        raise BmsError(f"CRC check failed: 0x{computed_crc:02x} != 0x{frame[JK_BMS_MIN_FRAME_SIZE - 1]:02x}")
+
+
+def _parse_jk02_layout(frame: bytes, layout: str, address: str, name: str, protocol: str, cell_count: int) -> BmsStatus:
+    if layout == "32s":
+        voltage_start = 6
+        resistance_start = 80
+        mos_temperature_at = 144
+        pack_voltage_at = 150
+        current_at = 158
+        battery_t1_at = 162
+        battery_t2_at = 164
+        balance_current_at = 170
+        capacity_percent_at = 173
+        remaining_capacity_at = 174
+        nominal_capacity_at = 178
+        cycle_count_at = 182
+        cycle_capacity_at = 186
+        max_cells = 32
+    else:
+        voltage_start = 6
+        resistance_start = 64
+        pack_voltage_at = 118
+        current_at = 126
+        battery_t1_at = 130
+        battery_t2_at = 132
+        mos_temperature_at = 134
+        balance_current_at = 138
+        capacity_percent_at = 141
+        remaining_capacity_at = 142
+        nominal_capacity_at = 146
+        cycle_count_at = 150
+        cycle_capacity_at = 154
+        max_cells = 24
+
+    cells: list[BmsCell] = []
+    for index in range(1, min(max(1, cell_count), max_cells) + 1):
+        voltage = _u16(frame, voltage_start + (index - 1) * 2) * 0.001
+        resistance_mohm = _u16(frame, resistance_start + (index - 1) * 2) * 0.001
+        if 0 < voltage < 6:
+            cells.append(BmsCell(
+                index=index,
+                voltage=round(voltage, 4),
+                resistance_mohm=_round(resistance_mohm, 4),
+                wire_resistance_mohm=_round(resistance_mohm, 4),
+            ))
+
+    current_a = _i32(frame, current_at) * 0.001
+    voltage = _u32(frame, pack_voltage_at) * 0.001
+    balance_current_a = _i16(frame, balance_current_at) * 0.001
+    return _status_from_values(
+        source="jkbms-ble",
+        connected=True,
+        address=address or None,
+        name=name or None,
+        protocol=protocol,
+        cell_count=cell_count,
+        cells=cells,
+        voltage=voltage,
+        current_a=current_a,
+        capacity_percent=frame[capacity_percent_at],
+        remaining_capacity_ah=_u32(frame, remaining_capacity_at) * 0.001,
+        nominal_capacity_ah=_u32(frame, nominal_capacity_at) * 0.001,
+        cycle_count=_u32(frame, cycle_count_at),
+        cycle_capacity_ah=_u32(frame, cycle_capacity_at) * 0.001,
+        balance_current_a=balance_current_a,
+        battery_t1_c=_i16(frame, battery_t1_at) * 0.1,
+        battery_t2_c=_i16(frame, battery_t2_at) * 0.1,
+        mos_temperature_c=_i16(frame, mos_temperature_at) * 0.1,
+        raw_summary={
+            "protocol": "JK02 BLE",
+            "layout": layout,
+            "frame_type": frame[4],
+            "frame_counter": frame[5],
+        },
+    )
+
+
+def _plausible_jkbms_status(status: BmsStatus) -> bool:
+    if status.capacity_percent is not None and not 0 <= status.capacity_percent <= 100:
+        return False
+    if status.voltage is not None and not 1 <= status.voltage <= 200:
+        return False
+    if status.current_a is not None and abs(status.current_a) > 500:
+        return False
+    if status.cells:
+        summed = sum(cell.voltage for cell in status.cells)
+        if status.voltage is not None and summed > 1 and abs(status.voltage - summed) > max(3.0, summed * 0.25):
+            return False
+    return bool(status.cells or status.voltage is not None or status.capacity_percent is not None)
+
+
+def _u16(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset:offset + 2], "little", signed=False)
+
+
+def _i16(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset:offset + 2], "little", signed=True)
+
+
+def _u32(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset:offset + 4], "little", signed=False)
+
+
+def _i32(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset:offset + 4], "little", signed=True)
+
+
+def _uuid_matches(uuid: Any, expected: str) -> bool:
+    value = str(uuid).lower()
+    short = expected[4:8]
+    return value in (expected, short, f"0x{short}") or value.replace("-", "").endswith(expected.replace("-", "")[:8])
+
+
+def _char_supports(characteristic: Any, property_name: str) -> bool:
+    return property_name in {str(value).lower() for value in getattr(characteristic, "properties", []) or []}
+
+
 def bms_from_settings(settings: Any) -> BaseBms:
     mode = settings.bms_mode.lower()
     if mode == "simulator":
         return SimulatorBms(settings.bms_cell_count)
     if mode == "jkbms":
-        return JkbmsCliBms(
+        if getattr(settings, "bms_jkbms_backend", "ble").lower() == "cli":
+            return JkbmsCliBms(
+                settings.bms_bluetooth_address,
+                settings.bms_name,
+                settings.bms_protocol,
+                settings.bms_cell_count,
+                settings.bms_timeout_seconds,
+                settings.bms_jkbms_command,
+                settings.bms_retries,
+                settings.bms_retry_delay_seconds,
+            )
+        return JkbmsBleBms(
             settings.bms_bluetooth_address,
             settings.bms_name,
             settings.bms_protocol,
             settings.bms_cell_count,
             settings.bms_timeout_seconds,
-            settings.bms_jkbms_command,
-            settings.bms_retries,
-            settings.bms_retry_delay_seconds,
         )
     return DisabledBms()
 

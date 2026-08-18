@@ -88,6 +88,7 @@ BMS_POLL_SECONDS=30
 BMS_TIMEOUT_SECONDS=25
 BMS_RETRIES=2
 BMS_RETRY_DELAY_SECONDS=2
+BMS_JKBMS_BACKEND=ble
 ```
 
 `INVERTER_POLL_SECONDS` controls live telemetry reads and WebSocket updates.
@@ -96,6 +97,9 @@ to history.
 `BMS_MODE` can be `disabled`, `simulator`, or `jkbms`. For hardware BMS reads,
 first run `../scripts/bms-cli scan --json`, then verify with
 `../scripts/bms-cli status --address <address> --protocol JK02 --json`.
+`BMS_JKBMS_BACKEND=ble` keeps one Bluetooth connection open in the API; use
+`BMS_JKBMS_BACKEND=cli` to shell out to the pinned `jkbms` command per poll.
+For CLI diagnostics, `status` and `monitor` accept `--backend cli` too.
 
 For local development, the backend can run in simulator mode:
 

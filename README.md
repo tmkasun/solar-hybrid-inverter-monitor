@@ -93,9 +93,10 @@ BMS_POLL_SECONDS=30
 BMS_TIMEOUT_SECONDS=25
 BMS_RETRIES=2
 BMS_RETRY_DELAY_SECONDS=2
+BMS_JKBMS_BACKEND=ble
 ```
 
-Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.
+Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `BMS_JKBMS_BACKEND=ble` keeps one Bluetooth LE connection open and reads the JK-BMS notification stream between polls; set `BMS_JKBMS_BACKEND=cli` to force the older behavior that shells out to the `jkbms` command for each poll. The `bms-cli status` and `bms-cli monitor` commands also default to persistent BLE; add `--backend cli` to compare against the old reader. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.
 
 ## Raspberry Pi deployment
 
