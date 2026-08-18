@@ -182,24 +182,31 @@ class JkbmsBleBms(BaseBms):
         self.latest_status_monotonic = 0.0
         self.status_version = 0
         self.connected = False
+        self.disconnect_error: str | None = None
         self._lock = asyncio.Lock()
         self._status_event = asyncio.Event()
 
     async def status(self) -> BmsStatus:
         if not self.address:
             raise BmsError("BMS_BLUETOOTH_ADDRESS is required for BMS_MODE=jkbms")
-        async with self._lock:
-            await self._ensure_connected()
-            now = time.monotonic()
-            if self.latest_status and now - self.latest_status_monotonic <= self.timeout_seconds:
-                return self.latest_status
-            starting_version = self.status_version
-            await self._request_cell_info()
         try:
-            await asyncio.wait_for(self._wait_for_new_status(starting_version), timeout=self.timeout_seconds)
-        except asyncio.TimeoutError as exc:
+            async with self._lock:
+                await self._ensure_connected()
+                now = time.monotonic()
+                if self.latest_status and now - self.latest_status_monotonic <= self.timeout_seconds:
+                    return self.latest_status
+                starting_version = self.status_version
+                await self._request_cell_info()
+            try:
+                await asyncio.wait_for(self._wait_for_new_status(starting_version), timeout=self.timeout_seconds)
+            except asyncio.TimeoutError as exc:
+                await self._disconnect()
+                raise BmsError(f"JK-BMS BLE status timed out after {self.timeout_seconds:g}s") from exc
+        except BmsError:
+            raise
+        except Exception as exc:
             await self._disconnect()
-            raise BmsError(f"JK-BMS BLE status timed out after {self.timeout_seconds:g}s") from exc
+            raise BmsError(f"JK-BMS BLE read failed: {exc}") from exc
         assert self.latest_status is not None
         return self.latest_status
 
@@ -208,8 +215,14 @@ class JkbmsBleBms(BaseBms):
 
     async def _wait_for_new_status(self, starting_version: int) -> None:
         while self.status_version <= starting_version:
+            if self.disconnect_error:
+                raise BmsError(self.disconnect_error)
             self._status_event.clear()
+            if self.disconnect_error:
+                raise BmsError(self.disconnect_error)
             await self._status_event.wait()
+        if self.disconnect_error and self.status_version <= starting_version:
+            raise BmsError(self.disconnect_error)
 
     async def _ensure_connected(self) -> None:
         if self._client_is_connected():
@@ -223,14 +236,18 @@ class JkbmsBleBms(BaseBms):
             if not self._client_is_connected(client):
                 raise BmsError(f"failed to connect to JK-BMS BLE device {self.address}")
             self.connected = True
+            self.disconnect_error = None
             self.write_char, self.notify_char = await self._characteristics(client)
             await client.start_notify(self.notify_char, self._notification)
             logger.info("JK-BMS BLE connected; requesting device and cell info")
             await self._write_command(JK_BMS_DEVICE_INFO_COMMAND)
             await self._write_command(JK_BMS_CELL_INFO_COMMAND)
-        except Exception:
+        except BmsError:
             await self._disconnect()
             raise
+        except Exception as exc:
+            await self._disconnect()
+            raise BmsError(f"JK-BMS BLE connection failed: {exc}") from exc
 
     def _new_client(self) -> Any:
         if self.client_factory is not None:
@@ -322,6 +339,7 @@ class JkbmsBleBms(BaseBms):
         self.write_char = None
         self.frame_buffer.clear()
         self.connected = False
+        self.disconnect_error = None
         if client is None:
             return
         try:
@@ -349,6 +367,7 @@ class JkbmsBleBms(BaseBms):
         self.notify_char = None
         self.write_char = None
         self.frame_buffer.clear()
+        self.disconnect_error = "JK-BMS BLE device disconnected before a status frame was received"
         self._status_event.set()
 
 
@@ -418,6 +437,24 @@ class JkbmsCliBms(BaseBms):
             detail = compact_process_detail(completed.stderr or completed.stdout)
             raise BmsError(f"jkbms {bms_command} failed with exit code {completed.returncode}: {detail}")
         return parse_json_output(completed.stdout)
+
+
+class JkbmsAutoBms(BaseBms):
+    def __init__(self, ble: JkbmsBleBms, cli: JkbmsCliBms):
+        self.ble = ble
+        self.cli = cli
+
+    async def status(self) -> BmsStatus:
+        try:
+            return await self.ble.status()
+        except BmsError as exc:
+            logger.warning("Persistent JK-BMS BLE read failed; falling back to jkbms CLI for this poll: %s", exc)
+            await self.ble.close()
+            return await self.cli.status()
+
+    async def close(self) -> None:
+        await self.ble.close()
+        await self.cli.close()
 
 
 def utc_now() -> str:
@@ -597,25 +634,36 @@ def bms_from_settings(settings: Any) -> BaseBms:
     if mode == "simulator":
         return SimulatorBms(settings.bms_cell_count)
     if mode == "jkbms":
-        if getattr(settings, "bms_jkbms_backend", "ble").lower() == "cli":
-            return JkbmsCliBms(
-                settings.bms_bluetooth_address,
-                settings.bms_name,
-                settings.bms_protocol,
-                settings.bms_cell_count,
-                settings.bms_timeout_seconds,
-                settings.bms_jkbms_command,
-                settings.bms_retries,
-                settings.bms_retry_delay_seconds,
-            )
-        return JkbmsBleBms(
-            settings.bms_bluetooth_address,
-            settings.bms_name,
-            settings.bms_protocol,
-            settings.bms_cell_count,
-            settings.bms_timeout_seconds,
-        )
+        backend = getattr(settings, "bms_jkbms_backend", "auto").lower()
+        if backend == "cli":
+            return _jkbms_cli_from_settings(settings)
+        if backend == "ble":
+            return _jkbms_ble_from_settings(settings)
+        return JkbmsAutoBms(_jkbms_ble_from_settings(settings), _jkbms_cli_from_settings(settings))
     return DisabledBms()
+
+
+def _jkbms_ble_from_settings(settings: Any) -> JkbmsBleBms:
+    return JkbmsBleBms(
+        settings.bms_bluetooth_address,
+        settings.bms_name,
+        settings.bms_protocol,
+        settings.bms_cell_count,
+        settings.bms_timeout_seconds,
+    )
+
+
+def _jkbms_cli_from_settings(settings: Any) -> JkbmsCliBms:
+    return JkbmsCliBms(
+        settings.bms_bluetooth_address,
+        settings.bms_name,
+        settings.bms_protocol,
+        settings.bms_cell_count,
+        settings.bms_timeout_seconds,
+        settings.bms_jkbms_command,
+        settings.bms_retries,
+        settings.bms_retry_delay_seconds,
+    )
 
 
 async def scan_bluetooth_devices(timeout_seconds: float = 8) -> list[dict[str, Any]]:

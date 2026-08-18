@@ -160,23 +160,28 @@ class State:
         try:
             self.latest_bms = await self.bms.status()
             logger.info("BMS telemetry poll succeeded: source=%s connected=%s", self.latest_bms.source, self.latest_bms.connected)
-        except (BmsError, ValueError) as exc:
+        except BmsError as exc:
+            logger.warning("BMS telemetry poll failed: %s", exc)
+            self.latest_bms = self.bms_failure_status(str(exc))
+        except ValueError as exc:
             logger.exception("BMS telemetry poll failed")
-            error = str(exc)
-            self.latest_bms = (
-                self.latest_bms.with_poll_error(error)
-                if self.latest_bms.connected
-                else BmsStatus.failed(
-                    settings.bms_mode.lower(),
-                    error,
-                    address=settings.bms_bluetooth_address,
-                    name=settings.bms_name,
-                    protocol=settings.bms_protocol,
-                )
-            )
+            self.latest_bms = self.bms_failure_status(str(exc))
         latest = await self.update_latest()
         await self.broadcast({"type": "telemetry" if self.latest_bms.connected else "connection", "data": latest})
         return self.latest_bms
+
+    def bms_failure_status(self, error: str) -> BmsStatus:
+        return (
+            self.latest_bms.with_poll_error(error)
+            if self.latest_bms.connected
+            else BmsStatus.failed(
+                settings.bms_mode.lower(),
+                error,
+                address=settings.bms_bluetooth_address,
+                name=settings.bms_name,
+                protocol=settings.bms_protocol,
+            )
+        )
 
     async def poll_loop(self) -> None:
         while True:

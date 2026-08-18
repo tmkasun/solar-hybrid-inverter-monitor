@@ -93,10 +93,20 @@ BMS_POLL_SECONDS=30
 BMS_TIMEOUT_SECONDS=25
 BMS_RETRIES=2
 BMS_RETRY_DELAY_SECONDS=2
-BMS_JKBMS_BACKEND=ble
+BMS_JKBMS_BACKEND=auto
 ```
 
-Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `BMS_JKBMS_BACKEND=ble` keeps one Bluetooth LE connection open and reads the JK-BMS notification stream between polls; set `BMS_JKBMS_BACKEND=cli` to force the older behavior that shells out to the `jkbms` command for each poll. The `bms-cli status` and `bms-cli monitor` commands also default to persistent BLE; add `--backend cli` to compare against the old reader. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.
+Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `BMS_JKBMS_BACKEND=auto` tries persistent Bluetooth LE first and falls back to the older `jkbms` command if Bleak cannot use the adapter; set `BMS_JKBMS_BACKEND=ble` to force persistent BLE only, or `BMS_JKBMS_BACKEND=cli` to shell out for each poll. The `bms-cli status` and `bms-cli monitor` commands use the same backend choices with `--backend auto|ble|cli`. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.
+
+If `bluetoothctl list` prints nothing and `/sys/class/bluetooth/` has no `hci*` entry, BlueZ is running but Linux has not created a Bluetooth adapter. Check the Pi firmware packages, overlays, and UART Bluetooth service before debugging the app:
+
+```sh
+grep -RniE 'disable-bt|bluetooth|hciuart|uart' /boot/firmware/config.txt /boot/config.txt 2>/dev/null
+dpkg -l | grep -Ei 'pi-bluetooth|bluez|linux-firmware-raspi|raspi-firmware'
+lsmod | grep -Ei 'bluetooth|hci_uart|btusb|btrtl|btbcm'
+sudo systemctl status hciuart bluetooth --no-pager
+sudo dmesg -T | grep -Ei 'bluetooth|hci|brcm|btusb|uart'
+```
 
 ## Raspberry Pi deployment
 

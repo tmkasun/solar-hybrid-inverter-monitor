@@ -8,7 +8,7 @@ import logging
 import sys
 from typing import Any, Sequence
 
-from .bms import BmsError, JkbmsBleBms, JkbmsCliBms, scan_bluetooth_devices
+from .bms import BmsError, JkbmsAutoBms, JkbmsBleBms, JkbmsCliBms, scan_bluetooth_devices
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,8 @@ def add_bms_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--retries", type=int, default=settings.bms_retries, help="retry failed reads this many times")
     parser.add_argument("--retry-delay", type=float, default=settings.bms_retry_delay_seconds, help="seconds between retry attempts")
     parser.add_argument("--command", default=settings.bms_jkbms_command, help="path to the jkbms executable")
-    parser.add_argument("--backend", choices=("ble", "cli"), default=settings.bms_jkbms_backend,
-                        help="reader backend for status/monitor (default: ble)")
+    parser.add_argument("--backend", choices=("auto", "ble", "cli"), default=settings.bms_jkbms_backend,
+                        help="reader backend for status/monitor (default: auto)")
 
 
 async def execute(args: argparse.Namespace) -> int:
@@ -126,7 +126,11 @@ async def execute(args: argparse.Namespace) -> int:
 def make_bms(args: argparse.Namespace):
     if args.operation in ("raw", "info") or args.backend == "cli":
         return JkbmsCliBms(args.address, args.name, args.protocol, args.cell_count, args.timeout, args.command, args.retries, args.retry_delay)
-    return JkbmsBleBms(args.address, args.name, args.protocol, args.cell_count, args.timeout)
+    ble = JkbmsBleBms(args.address, args.name, args.protocol, args.cell_count, args.timeout)
+    if args.backend == "ble":
+        return ble
+    cli = JkbmsCliBms(args.address, args.name, args.protocol, args.cell_count, args.timeout, args.command, args.retries, args.retry_delay)
+    return JkbmsAutoBms(ble, cli)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

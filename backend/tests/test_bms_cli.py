@@ -28,7 +28,7 @@ def test_bms_cli_status_json(monkeypatch, capsys):
 
     monkeypatch.setattr(bms_cli, "JkbmsBleBms", FakeBms)
 
-    assert bms_cli.main(["status", "--address", "AA:BB", "--json"]) == 0
+    assert bms_cli.main(["status", "--address", "AA:BB", "--backend", "ble", "--json"]) == 0
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["connected"] is True
     assert snapshot["cells"][0]["index"] == 1

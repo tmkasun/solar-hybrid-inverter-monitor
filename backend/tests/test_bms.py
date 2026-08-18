@@ -1,3 +1,4 @@
+import asyncio
 import json
 import subprocess
 import sys
@@ -10,8 +11,10 @@ from app.bms import (
     BmsCell,
     BmsError,
     BmsStatus,
+    JkbmsAutoBms,
     JkbmsBleBms,
     JkbmsCliBms,
+    SimulatorBms,
     apply_bms_to_status,
     bms_from_settings,
     bms_history_metrics,
@@ -374,7 +377,85 @@ async def test_jkbms_ble_status_reuses_persistent_connection():
     assert [command[4] for command in client.writes] == [0x97, 0x96]
 
 
-def test_bms_from_settings_uses_persistent_ble_by_default():
+@pytest.mark.asyncio
+async def test_jkbms_ble_wraps_client_connect_errors_as_bms_errors():
+    class FailingBleakClient:
+        is_connected = False
+
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+
+        async def connect(self):
+            raise RuntimeError("No Bluetooth adapters found.")
+
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FailingBleakClient)
+
+    with pytest.raises(BmsError, match="No Bluetooth adapters found"):
+        await bms.status()
+
+
+@pytest.mark.asyncio
+async def test_jkbms_ble_reports_disconnect_before_status_frame():
+    class FakeCharacteristic:
+        def __init__(self, properties):
+            self.uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
+            self.properties = properties
+
+    class FakeService:
+        uuid = "0000ffe0-0000-1000-8000-00805f9b34fb"
+        characteristics = [
+            FakeCharacteristic(["write-without-response"]),
+            FakeCharacteristic(["notify"]),
+        ]
+
+    class DisconnectingBleakClient:
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+            self.is_connected = False
+            self.services = [FakeService()]
+            self.cell_info_writes = 0
+
+        async def connect(self):
+            self.is_connected = True
+
+        async def start_notify(self, characteristic, callback):
+            return None
+
+        async def write_gatt_char(self, characteristic, data, response=False):
+            if data[4] == 0x96:
+                self.cell_info_writes += 1
+                if self.cell_info_writes == 2:
+                    asyncio.get_running_loop().call_soon(self.disconnected_callback, self)
+
+        async def disconnect(self):
+            self.is_connected = False
+
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, DisconnectingBleakClient)
+
+    with pytest.raises(BmsError, match="disconnected before a status frame"):
+        await bms.status()
+
+
+def test_bms_from_settings_uses_auto_backend_by_default():
+    selected = bms_from_settings(SimpleNamespace(
+        bms_mode="jkbms",
+        bms_bluetooth_address="AA:BB:CC:DD:EE:FF",
+        bms_name="JK-BMS",
+        bms_protocol="JK02",
+        bms_cell_count=8,
+        bms_timeout_seconds=25,
+        bms_jkbms_backend="auto",
+        bms_jkbms_command="jkbms",
+        bms_retries=1,
+        bms_retry_delay_seconds=0,
+    ))
+
+    assert isinstance(selected, JkbmsAutoBms)
+
+
+def test_bms_from_settings_can_force_ble_backend():
     selected = bms_from_settings(SimpleNamespace(
         bms_mode="jkbms",
         bms_bluetooth_address="AA:BB:CC:DD:EE:FF",
@@ -386,6 +467,35 @@ def test_bms_from_settings_uses_persistent_ble_by_default():
     ))
 
     assert isinstance(selected, JkbmsBleBms)
+
+
+@pytest.mark.asyncio
+async def test_jkbms_auto_falls_back_to_cli_when_ble_adapter_is_unavailable():
+    class FailingBle:
+        closed = False
+
+        async def status(self):
+            raise BmsError("JK-BMS BLE connection failed: No Bluetooth adapters found.")
+
+        async def close(self):
+            self.closed = True
+
+    class WorkingCli:
+        closed = False
+
+        async def status(self):
+            return await SimulatorBms(2).status()
+
+        async def close(self):
+            self.closed = True
+
+    ble = FailingBle()
+    cli = WorkingCli()
+    status = await JkbmsAutoBms(ble, cli).status()
+
+    assert status.connected is True
+    assert ble.closed is True
+    assert cli.closed is False
 
 
 def test_bms_from_settings_can_force_cli_backend():

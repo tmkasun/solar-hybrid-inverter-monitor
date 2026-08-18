@@ -18,6 +18,15 @@ else
 fi
 if command -v bluetoothctl >/dev/null; then
   echo "Bluetooth tooling detected."
+  if bluetoothctl list | grep -q '^Controller '; then
+    echo "Bluetooth adapter detected."
+  else
+    echo "WARNING: BlueZ is installed, but no Bluetooth adapter is visible."
+    echo "Check Raspberry Pi Bluetooth firmware/overlays before enabling persistent JK-BMS BLE:"
+    echo "  bluetoothctl list"
+    echo "  ls -la /sys/class/bluetooth/"
+    echo "  sudo systemctl status hciuart bluetooth --no-pager"
+  fi
 else
   echo "WARNING: bluetoothctl is not installed; install BlueZ before enabling JK-BMS polling."
 fi

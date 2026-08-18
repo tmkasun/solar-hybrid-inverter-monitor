@@ -88,7 +88,7 @@ BMS_POLL_SECONDS=30
 BMS_TIMEOUT_SECONDS=25
 BMS_RETRIES=2
 BMS_RETRY_DELAY_SECONDS=2
-BMS_JKBMS_BACKEND=ble
+BMS_JKBMS_BACKEND=auto
 ```
 
 `INVERTER_POLL_SECONDS` controls live telemetry reads and WebSocket updates.
@@ -97,9 +97,14 @@ to history.
 `BMS_MODE` can be `disabled`, `simulator`, or `jkbms`. For hardware BMS reads,
 first run `../scripts/bms-cli scan --json`, then verify with
 `../scripts/bms-cli status --address <address> --protocol JK02 --json`.
-`BMS_JKBMS_BACKEND=ble` keeps one Bluetooth connection open in the API; use
-`BMS_JKBMS_BACKEND=cli` to shell out to the pinned `jkbms` command per poll.
-For CLI diagnostics, `status` and `monitor` accept `--backend cli` too.
+`BMS_JKBMS_BACKEND=auto` tries persistent BLE first and falls back to the
+pinned `jkbms` command if Bleak cannot use the adapter. Use `ble` to force
+persistent BLE only, or `cli` to shell out per poll. For CLI diagnostics,
+`status` and `monitor` accept `--backend auto|ble|cli` too.
+
+If `bluetoothctl list` prints nothing and `/sys/class/bluetooth/` has no
+`hci*` entry, BlueZ is running but Linux has not created a Bluetooth adapter.
+Check Pi firmware, overlays, and `hciuart` before debugging the app.
 
 For local development, the backend can run in simulator mode:
 
