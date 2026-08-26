@@ -119,6 +119,15 @@ Pi-side recovery helper performs the ordered recovery and verification flow:
 ./scripts/recover-jkbms-bluetooth --address C8:47:8C:E2:A0:2E --fix-packages --reboot
 ```
 
+If packages are installed but `hciuart` times out while flashing
+`BCM4345C0.hcd`, enable kernel-side Bluetooth attach and reboot:
+
+```sh
+echo 'dtparam=krnbt=on' | sudo tee -a /boot/firmware/config.txt
+sudo systemctl disable hciuart
+sudo reboot
+```
+
 For local development, the backend can run in simulator mode:
 
 ```sh

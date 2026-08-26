@@ -155,6 +155,30 @@ show_bluetooth_packages() {
   fi
 }
 
+print_no_controller_hint() {
+  cat >&2 <<'HINT'
+
+Bluetooth core loaded, but no HCI controller is visible.
+On Raspberry Pi 3/3B+/Zero W boards, Bluetooth is attached over the PL011 UART.
+If dmesg shows Bluetooth core initialization but no hci0/BCM attach lines, focus on:
+  - hciuart service missing, disabled, or failed
+  - missing Broadcom Bluetooth firmware package
+  - /boot/firmware/config.txt or /boot/config.txt disabling Bluetooth/UART
+  - serial console or overlays taking the Bluetooth UART
+
+On Ubuntu Raspberry Pi images where hciuart times out while flashing
+/lib/firmware/brcm/BCM4345C0.hcd, try kernel-side Bluetooth attach:
+  echo 'dtparam=krnbt=on' | sudo tee -a /boot/firmware/config.txt
+  sudo systemctl disable hciuart
+  sudo reboot
+
+Useful next commands:
+  sudo systemctl status hciuart bluetooth --no-pager
+  sudo journalctl -b -u hciuart -u bluetooth --no-pager
+  grep -RniE 'disable-bt|bluetooth|hciuart|uart|mini-uart|enable_uart' /boot/firmware/config.txt /boot/config.txt 2>/dev/null
+HINT
+}
+
 section "JK-BMS Bluetooth Recovery"
 echo "Project: $root_dir"
 echo "BMS: $bms_address ($bms_protocol, ${bms_cell_count} cells)"
@@ -218,6 +242,7 @@ fi
 if ! controller_visible; then
   section "Blocked"
   echo "No Bluetooth controller is visible. Resolve firmware/overlay/UART errors above, then rerun this script." >&2
+  print_no_controller_hint
   echo "Use --fix-packages to reinstall available Bluetooth packages automatically." >&2
   exit 3
 fi

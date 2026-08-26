@@ -32,3 +32,8 @@ def test_jkbms_bluetooth_recovery_script_covers_adapter_recovery_flow():
     assert "--backend ble" in script
     assert "systemctl restart sako-inverter-api" in script
     assert "--fix-packages" in script
+    assert "Bluetooth core loaded, but no HCI controller is visible." in script
+    assert "PL011 UART" in script
+    assert "enable_uart" in script
+    assert "dtparam=krnbt=on" in script
+    assert "systemctl disable hciuart" in script

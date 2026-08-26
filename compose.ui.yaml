@@ -1,13 +1,23 @@
-# Frontend-only deployment for home.knnect.lk.
-# Put this behind the host's HTTPS nginx proxy. Set PI_API_UPSTREAM to the Pi's
-# private LAN/VPN address, or another host:port reachable from this container.
+# Frontend-only deployment for solar.knnect.lk.
+# Cloudflare Tunnel terminates public HTTPS and forwards HTTP to Traefik.
+# Traefik reaches this container over the external proxy network.
 services:
   web:
     build: ./frontend
     restart: unless-stopped
     environment:
       API_UPSTREAM: ${PI_API_UPSTREAM:?Set PI_API_UPSTREAM in .env.ui, for example 192.168.1.50:8000}
-    ports:
-      - "127.0.0.1:8080:80"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.solar-ui.rule=Host(`solar.knnect.lk`)
+      - traefik.http.routers.solar-ui.entrypoints=web
+      - traefik.http.services.solar-ui.loadbalancer.server.port=80
+    networks:
+      - proxy
     security_opt:
       - no-new-privileges:true
+
+networks:
+  proxy:
+    external: true
