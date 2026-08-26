@@ -1,5 +1,10 @@
 # Sako solar inverter monitor
 
+
+<img width="1575" height="1186" alt="image" src="https://github.com/user-attachments/assets/5b23f71f-2c7f-426d-bfe8-41f699f24047" />
+<img width="1756" height="1714" alt="image" src="https://github.com/user-attachments/assets/f61ec515-e50b-4898-936a-e6183a79b2f4" />
+
+
 Python + React control plane for a Sako hybrid inverter attached by USB to a Raspberry Pi. It communicates with the Cypress `0665:5161` USB HID device using the PIP protocol; it is not a `/dev/ttyUSB*` serial connection.
 
 ## Laptop development
