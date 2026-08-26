@@ -396,6 +396,32 @@ async def test_jkbms_ble_wraps_client_connect_errors_as_bms_errors():
 
 
 @pytest.mark.asyncio
+async def test_jkbms_ble_debug_scan_runs_before_connect_when_debug_enabled(monkeypatch, caplog):
+    class FailingBleakClient:
+        is_connected = False
+
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+
+        async def connect(self):
+            raise RuntimeError("Device not found")
+
+    async def fake_scan(timeout):
+        assert timeout == 2
+        return [{"address": "AA:BB:CC:DD:EE:FF", "name": "JK-BMS", "rssi": -48}]
+
+    monkeypatch.setattr("app.bms.scan_bluetooth_devices", fake_scan)
+    caplog.set_level("DEBUG", logger="app.bms")
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FailingBleakClient, bootstrap_seconds=0, debug_scan_seconds=2)
+
+    with pytest.raises(BmsError, match="Device not found"):
+        await bms.status()
+
+    assert "target_seen=True" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_jkbms_ble_reports_disconnect_before_status_frame():
     class FakeCharacteristic:
         def __init__(self, properties):

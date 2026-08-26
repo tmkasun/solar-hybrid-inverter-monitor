@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+set -u
+
+root_dir=$(cd "$(dirname "$0")/.." && pwd)
+
+bms_address=${BMS_BLUETOOTH_ADDRESS:-C8:47:8C:E2:A0:2E}
+bms_protocol=${BMS_PROTOCOL:-JK02}
+bms_cell_count=${BMS_CELL_COUNT:-8}
+bms_timeout=${BMS_TIMEOUT_SECONDS:-25}
+bootstrap_seconds=${BMS_BLE_BOOTSTRAP_SECONDS:-5}
+debug_scan_seconds=${BMS_BLE_DEBUG_SCAN_SECONDS:-8}
+fix_packages=0
+reboot_after_fix=0
+stop_api=1
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/recover-jkbms-bluetooth [options]
+
+Diagnose and recover Raspberry Pi Bluetooth before verifying JK-BMS BLE reads.
+
+Options:
+  --address MAC              JK-BMS Bluetooth address
+  --protocol NAME            JK-BMS protocol (default: JK02)
+  --cell-count N             Expected battery cell count (default: 8)
+  --timeout SECONDS          BMS read timeout (default: 25)
+  --bootstrap-seconds N      Delay between JK device-info and cell-data requests (default: 5)
+  --debug-scan-seconds N     Bleak debug scan timeout (default: 8)
+  --fix-packages             Reinstall available Bluetooth firmware/packages if hci0 is still missing
+  --reboot                   Reboot after --fix-packages completes
+  --no-stop-api              Leave sako-inverter-api running during diagnostics
+  -h, --help                 Show this help
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --address)
+      if [ "$#" -lt 2 ]; then echo "--address requires a value" >&2; exit 2; fi
+      bms_address=$2
+      shift 2
+      ;;
+    --protocol)
+      if [ "$#" -lt 2 ]; then echo "--protocol requires a value" >&2; exit 2; fi
+      bms_protocol=$2
+      shift 2
+      ;;
+    --cell-count)
+      if [ "$#" -lt 2 ]; then echo "--cell-count requires a value" >&2; exit 2; fi
+      bms_cell_count=$2
+      shift 2
+      ;;
+    --timeout)
+      if [ "$#" -lt 2 ]; then echo "--timeout requires a value" >&2; exit 2; fi
+      bms_timeout=$2
+      shift 2
+      ;;
+    --bootstrap-seconds)
+      if [ "$#" -lt 2 ]; then echo "--bootstrap-seconds requires a value" >&2; exit 2; fi
+      bootstrap_seconds=$2
+      shift 2
+      ;;
+    --debug-scan-seconds)
+      if [ "$#" -lt 2 ]; then echo "--debug-scan-seconds requires a value" >&2; exit 2; fi
+      debug_scan_seconds=$2
+      shift 2
+      ;;
+    --fix-packages)
+      fix_packages=1
+      shift
+      ;;
+    --reboot)
+      reboot_after_fix=1
+      shift
+      ;;
+    --no-stop-api)
+      stop_api=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+run() {
+  printf '+'
+  printf ' %q' "$@"
+  printf '\n'
+  "$@"
+}
+
+run_optional() {
+  printf '+'
+  printf ' %q' "$@"
+  printf ' || true\n'
+  "$@" || true
+}
+
+have_command() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+controller_visible() {
+  if have_command bluetoothctl && bluetoothctl list 2>/dev/null | grep -q '^Controller '; then
+    return 0
+  fi
+  find /sys/class/bluetooth -maxdepth 1 -name 'hci*' -print -quit 2>/dev/null | grep -q .
+}
+
+apt_package_available() {
+  have_command apt-cache && apt-cache show "$1" >/dev/null 2>&1
+}
+
+sudo_run_optional() {
+  if have_command sudo; then
+    run_optional sudo "$@"
+  else
+    run_optional "$@"
+  fi
+}
+
+sudo_run() {
+  if have_command sudo; then
+    run sudo "$@"
+  else
+    run "$@"
+  fi
+}
+
+show_bluetooth_kernel_log() {
+  if have_command sudo; then
+    sudo dmesg -T 2>/dev/null | grep -Ei 'bluetooth|hci|brcm|btbcm|hci_uart|uart' || true
+  else
+    dmesg -T 2>/dev/null | grep -Ei 'bluetooth|hci|brcm|btbcm|hci_uart|uart' || true
+  fi
+}
+
+show_bluetooth_packages() {
+  if have_command dpkg-query; then
+    dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package} ${Version}\n' \
+      bluez bluetooth pi-bluetooth linux-firmware-raspi raspi-firmware 2>/dev/null || true
+  elif have_command dpkg; then
+    dpkg -l bluez bluetooth pi-bluetooth linux-firmware-raspi raspi-firmware 2>/dev/null || true
+  fi
+}
+
+section "JK-BMS Bluetooth Recovery"
+echo "Project: $root_dir"
+echo "BMS: $bms_address ($bms_protocol, ${bms_cell_count} cells)"
+
+if [ "$stop_api" -eq 1 ]; then
+  section "Stop API polling"
+  sudo_run_optional systemctl stop sako-inverter-api
+  if have_command bluetoothctl; then
+    sudo_run_optional bluetoothctl disconnect "$bms_address"
+  fi
+fi
+
+section "Initial Bluetooth state"
+run_optional hostname
+run_optional uname -a
+run_optional bluetoothctl list
+run_optional ls -la /sys/class/bluetooth/
+run_optional rfkill list bluetooth
+sudo_run_optional systemctl status bluetooth hciuart --no-pager
+sudo_run_optional journalctl -b -u bluetooth -u hciuart --no-pager
+show_bluetooth_kernel_log
+
+if ! controller_visible; then
+  section "Recover host Bluetooth controller"
+  sudo_run_optional rfkill unblock bluetooth
+  sudo_run_optional systemctl restart bluetooth
+  sudo_run_optional systemctl restart hciuart
+  sleep 2
+  run_optional bluetoothctl list
+  run_optional ls -la /sys/class/bluetooth/
+fi
+
+section "Pi Bluetooth configuration"
+run_optional grep -RniE 'disable-bt|bluetooth|hciuart|uart|mini-uart' /boot/firmware/config.txt /boot/config.txt
+show_bluetooth_packages
+
+if ! controller_visible && [ "$fix_packages" -eq 1 ]; then
+  section "Reinstall Bluetooth packages"
+  packages=""
+  for package in bluez bluetooth linux-firmware-raspi pi-bluetooth raspi-firmware; do
+    if apt_package_available "$package"; then
+      packages="$packages $package"
+    fi
+  done
+  if [ -z "$packages" ]; then
+    echo "No known Bluetooth packages were found in apt metadata." >&2
+  else
+    sudo_run apt update
+    # shellcheck disable=SC2086
+    sudo_run apt install --reinstall -y $packages
+    if [ "$reboot_after_fix" -eq 1 ]; then
+      section "Reboot"
+      sudo_run reboot
+      exit 0
+    fi
+    echo "Package reinstall complete. Reboot the Pi before rerunning this script."
+    exit 4
+  fi
+fi
+
+if ! controller_visible; then
+  section "Blocked"
+  echo "No Bluetooth controller is visible. Resolve firmware/overlay/UART errors above, then rerun this script." >&2
+  echo "Use --fix-packages to reinstall available Bluetooth packages automatically." >&2
+  exit 3
+fi
+
+section "Controller visible"
+run bluetoothctl list
+if have_command timeout; then
+  run_optional timeout 15 bluetoothctl scan on
+else
+  echo "Skipping timed bluetoothctl scan because timeout(1) is unavailable."
+fi
+
+section "Verify JK-BMS BLE read"
+if [ ! -x "$root_dir/scripts/bms-cli" ]; then
+  echo "Missing $root_dir/scripts/bms-cli" >&2
+  exit 5
+fi
+
+if LOG_LEVEL=DEBUG \
+  BMS_BLE_BOOTSTRAP_SECONDS="$bootstrap_seconds" \
+  BMS_BLE_DEBUG_SCAN_SECONDS="$debug_scan_seconds" \
+  "$root_dir/scripts/bms-cli" --verbose status --backend ble \
+    --address "$bms_address" \
+    --protocol "$bms_protocol" \
+    --cell-count "$bms_cell_count" \
+    --timeout "$bms_timeout" \
+    --json
+then
+  section "Restart API"
+  sudo_run systemctl restart sako-inverter-api
+  echo "JK-BMS BLE read succeeded and sako-inverter-api was restarted."
+  echo "Follow logs with: sudo journalctl -u sako-inverter-api -f"
+  echo "App log: sudo tail -f /var/solar.log"
+else
+  section "Verification failed"
+  echo "Bluetooth controller is visible, but the direct JK-BMS BLE read failed." >&2
+  echo "Close the mobile app, disconnect any active phone link, and rerun with LOG_LEVEL=DEBUG." >&2
+  exit 6
+fi

@@ -96,14 +96,23 @@ BMS_RETRY_DELAY_SECONDS=2
 BMS_JKBMS_BACKEND=auto
 BMS_BLE_RETRY_SECONDS=300
 BMS_BLE_BOOTSTRAP_SECONDS=1
+BMS_BLE_DEBUG_SCAN_SECONDS=5
 ```
 
 Restart the API with `sudo systemctl restart sako-inverter-api`. Use `BMS_MODE=simulator` for laptop/UI development, or keep `BMS_MODE=disabled` to run inverter-only. `BMS_JKBMS_BACKEND=auto` tries persistent Bluetooth LE first and falls back to the older `jkbms` command if Bleak cannot use the adapter or no BLE frame arrives; `BMS_BLE_RETRY_SECONDS` controls how long to stay on CLI before trying BLE again. `BMS_BLE_BOOTSTRAP_SECONDS` waits after the JK-BMS device-info command before requesting cell data; increase it while debugging BMS firmwares that disconnect before sending notifications. Set `BMS_JKBMS_BACKEND=ble` to force persistent BLE only, or `BMS_JKBMS_BACKEND=cli` to shell out for each poll. The `bms-cli status` and `bms-cli monitor` commands use the same backend choices with `--backend auto|ble|cli`. `mppsolar[ble]==0.15.62` is pinned intentionally because it supports Python 3.8.1+ and the older `jkbms` CLI behavior used by this pack.
 
-For persistent BLE debugging, temporarily set `LOG_LEVEL=DEBUG`, restart the API, and watch `/var/solar.log`. The BLE logs include selected services/characteristics, command payloads, notification chunk prefixes, frame-buffer length, CRC failures, parsed layout candidates, disconnect timing, and fallback cooldown state. You can test without the API loop using:
+For persistent BLE debugging, temporarily set `LOG_LEVEL=DEBUG`, restart the API, and watch `/var/solar.log`. The BLE logs include a pre-connect scan summary, selected services/characteristics, command payloads, notification chunk prefixes, frame-buffer length, CRC failures, parsed layout candidates, disconnect timing, and fallback cooldown state. If `hcitool con` shows an existing LE connection to the BMS while the API or CLI is not expected to be connected, disconnect it before testing because the BMS may stop advertising while a link is active:
 
 ```sh
-LOG_LEVEL=DEBUG BMS_BLE_BOOTSTRAP_SECONDS=5 ./scripts/bms-cli --verbose status --backend ble --address C8:47:8C:E2:A0:2E --protocol JK02 --json
+sudo systemctl stop sako-inverter-api
+sudo bluetoothctl disconnect C8:47:8C:E2:A0:2E
+sudo hcitool con
+```
+
+You can test without the API loop using:
+
+```sh
+LOG_LEVEL=DEBUG BMS_BLE_BOOTSTRAP_SECONDS=5 BMS_BLE_DEBUG_SCAN_SECONDS=8 ./scripts/bms-cli --verbose status --backend ble --address C8:47:8C:E2:A0:2E --protocol JK02 --json
 ```
 
 If `bluetoothctl list` prints nothing and `/sys/class/bluetooth/` has no `hci*` entry, BlueZ is running but Linux has not created a Bluetooth adapter. Check the Pi firmware packages, overlays, and UART Bluetooth service before debugging the app:
@@ -114,6 +123,13 @@ dpkg -l | grep -Ei 'pi-bluetooth|bluez|linux-firmware-raspi|raspi-firmware'
 lsmod | grep -Ei 'bluetooth|hci_uart|btusb|btrtl|btbcm'
 sudo systemctl status hciuart bluetooth --no-pager
 sudo dmesg -T | grep -Ei 'bluetooth|hci|brcm|btusb|uart'
+```
+
+The Pi-side recovery helper runs that flow in order: stop API polling, release the BMS link, recover the host Bluetooth controller, verify a direct BLE read, and only then restart the API:
+
+```sh
+./scripts/recover-jkbms-bluetooth --address C8:47:8C:E2:A0:2E
+./scripts/recover-jkbms-bluetooth --address C8:47:8C:E2:A0:2E --fix-packages --reboot
 ```
 
 ## Raspberry Pi deployment

@@ -32,6 +32,7 @@ class Settings:
     bms_jkbms_backend: str = os.getenv("BMS_JKBMS_BACKEND", "auto")
     bms_ble_retry_seconds: float = float(os.getenv("BMS_BLE_RETRY_SECONDS", "300"))
     bms_ble_bootstrap_seconds: float = float(os.getenv("BMS_BLE_BOOTSTRAP_SECONDS", "1"))
+    bms_ble_debug_scan_seconds: float = float(os.getenv("BMS_BLE_DEBUG_SCAN_SECONDS", "5"))
 
 
 settings = Settings()

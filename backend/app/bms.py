@@ -168,13 +168,14 @@ class SimulatorBms(BaseBms):
 class JkbmsBleBms(BaseBms):
     def __init__(self, address: str, name: str = "", protocol: str = "JK02", cell_count: int = 8,
                  timeout_seconds: float = 25, client_factory: Callable[..., Any] | None = None,
-                 bootstrap_seconds: float = 1):
+                 bootstrap_seconds: float = 1, debug_scan_seconds: float = 5):
         self.address = address.strip()
         self.name = name.strip()
         self.protocol = protocol.strip() or "JK02"
         self.cell_count = cell_count
         self.timeout_seconds = timeout_seconds
         self.bootstrap_seconds = max(0, bootstrap_seconds)
+        self.debug_scan_seconds = max(0, debug_scan_seconds)
         self.client_factory = client_factory
         self.client: Any | None = None
         self.notify_char: Any | None = None
@@ -249,6 +250,7 @@ class JkbmsBleBms(BaseBms):
             self.client = client
             started_at = time.monotonic()
             logger.info("Connecting to JK-BMS BLE device %s", self.address)
+            await self._log_debug_scan()
             await asyncio.wait_for(client.connect(), timeout=self.timeout_seconds)
             if not self._client_is_connected(client):
                 raise BmsError(f"failed to connect to JK-BMS BLE device {self.address}")
@@ -269,6 +271,21 @@ class JkbmsBleBms(BaseBms):
         except Exception as exc:
             await self._disconnect()
             raise BmsError(f"JK-BMS BLE connection failed: {exc}") from exc
+
+    async def _log_debug_scan(self) -> None:
+        if not logger.isEnabledFor(logging.DEBUG) or self.debug_scan_seconds <= 0:
+            return
+        try:
+            devices = await scan_bluetooth_devices(self.debug_scan_seconds)
+        except BmsError as exc:
+            logger.debug("JK-BMS BLE debug scan failed before connect: %s", exc)
+            return
+        matching = [device for device in devices if str(device.get("address", "")).lower() == self.address.lower()]
+        logger.debug(
+            "JK-BMS BLE debug scan before connect: target_seen=%s devices=%s",
+            bool(matching),
+            devices[:20],
+        )
 
     def _new_client(self) -> Any:
         if self.client_factory is not None:
@@ -782,6 +799,7 @@ def _jkbms_ble_from_settings(settings: Any) -> JkbmsBleBms:
         settings.bms_cell_count,
         settings.bms_timeout_seconds,
         bootstrap_seconds=getattr(settings, "bms_ble_bootstrap_seconds", 1),
+        debug_scan_seconds=getattr(settings, "bms_ble_debug_scan_seconds", 5),
     )
 
 
