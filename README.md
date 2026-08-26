@@ -1,4 +1,4 @@
-# Sako solar inverter monitor
+# Sako solar inverter monitor ([Demo](solar.knnect.lk))
 
 
 <img width="1575" height="1186" alt="image" src="https://github.com/user-attachments/assets/5b23f71f-2c7f-426d-bfe8-41f699f24047" />
