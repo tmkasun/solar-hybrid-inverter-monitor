@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
-import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import * as THREE from "three";
 import { api } from "./api";
 import type { HistoryRequest } from "./api";
@@ -124,6 +124,7 @@ function DataAnalysis({ fullPage = false, i18n }: { fullPage?: boolean } & I18nP
   const [customEnd, setCustomEnd] = useState(() => analysisState.range.mode === "custom" ? dateTimeInputValue(analysisState.range.end) : "");
   const [samples, setSamples] = useState<HistorySample[]>([]);
   const [zoomRange, setZoomRange] = useState<ChartZoomRange | null>(null);
+  const [highlightZeroLine, setHighlightZeroLine] = useState(true);
   const [rawDataOpen, setRawDataOpen] = useState(false);
   const [rawFilter, setRawFilter] = useState("");
   const [rawSort, setRawSort] = useState<RawSort>({ key: "captured_at", direction: "desc" });
@@ -139,6 +140,8 @@ function DataAnalysis({ fullPage = false, i18n }: { fullPage?: boolean } & I18nP
   const chartData = useMemo(() => downsample(enrichedSamples, 360).map(sample => ({ ...sample, at: chartTimeLabel(sample.captured_at, analysisState.range, i18n) })), [enrichedSamples, historyKey, i18n]);
   const stats = useMemo(() => selectedMetrics.map(metric => metricStats(metric, enrichedSamples)), [selectedMetrics, enrichedSamples]);
   const rawRows = useMemo(() => sortedFilteredRows(enrichedSamples, selectedMetrics, rawFilter, rawSort, i18n), [enrichedSamples, selectedMetrics, rawFilter, rawSort, i18n]);
+  const canHighlightZeroLine = selectedMetrics.some(metric => metric.id === "bms_power_w");
+  const showZeroLine = canHighlightZeroLine && highlightZeroLine;
   const zoomed = Boolean(zoomRange && chartData.length > 0 && (zoomRange.startIndex > 0 || zoomRange.endIndex < chartData.length - 1));
   const activeZoomRange = zoomRange && chartData.length > 0 ? clampZoomRange(zoomRange, chartData.length) : null;
   const activeGroupLabel = groupLabel(i18n, activeGroup.id);
@@ -238,8 +241,8 @@ function DataAnalysis({ fullPage = false, i18n }: { fullPage?: boolean } & I18nP
     </div>
     {error && <p className="error">{error}</p>}
     {!fullPage && <div className="analysis-summary">{stats.map(stat => <article key={stat.metric.id} className="analysis-stat"><span>{metricLabel(i18n, stat.metric.id)}</span><strong>{formatMetricValue(stat.metric, stat.latest)}</strong><small>{i18n.t("analysis.avg")} {formatMetricValue(stat.metric, stat.average)} · {i18n.t("analysis.min")} {formatMetricValue(stat.metric, stat.min)} · {i18n.t("analysis.max")} {formatMetricValue(stat.metric, stat.max)}</small></article>)}</div>}
-    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{i18n.t("analysis.trend", { group: activeGroupLabel })}</h3><span>{i18n.t("analysis.samplesSummary", { samples: samples.length, range: timeRangeLabel(analysisState.range, i18n), zoom: zoomLabel })}</span></div><div className="analysis-panel-actions"><button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>{i18n.t("analysis.resetZoom")}</button>{!fullPage && <Link className="button-link quiet" to={fullPagePath}>{i18n.t("analysis.fullPage")}</Link>}</div></div>
-      {loading && samples.length === 0 ? <div className="empty-chart">{i18n.t("analysis.loadingHistory")}</div> : chartData.length === 0 ? <div className="empty-chart">{i18n.t("analysis.noSamples")}</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/><Tooltip formatter={(value, name) => {
+    <div className="panel analysis-chart"><div className="analysis-panel-head"><div><h3>{i18n.t("analysis.trend", { group: activeGroupLabel })}</h3><span>{i18n.t("analysis.samplesSummary", { samples: samples.length, range: timeRangeLabel(analysisState.range, i18n), zoom: zoomLabel })}</span></div><div className="analysis-panel-actions">{canHighlightZeroLine && <label className={highlightZeroLine ? "zero-line-toggle active" : "zero-line-toggle"}><input type="checkbox" checked={highlightZeroLine} onChange={event => setHighlightZeroLine(event.target.checked)} /><span>{i18n.t("analysis.zeroLine")}</span></label>}<button className="quiet zoom-reset" disabled={!zoomed} onClick={() => setZoomRange(null)}>{i18n.t("analysis.resetZoom")}</button>{!fullPage && <Link className="button-link quiet" to={fullPagePath}>{i18n.t("analysis.fullPage")}</Link>}</div></div>
+      {loading && samples.length === 0 ? <div className="empty-chart">{i18n.t("analysis.loadingHistory")}</div> : chartData.length === 0 ? <div className="empty-chart">{i18n.t("analysis.noSamples")}</div> : <div className="chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#29404d" strokeDasharray="3 6" /><XAxis dataKey="at" minTickGap={34}/><YAxis/>{showZeroLine && <ReferenceLine y={0} ifOverflow="extendDomain" stroke="#d7e7ef" strokeDasharray="5 5" strokeOpacity={0.82} label={{ value: "0 W", position: "insideTopLeft", fill: "#d7e7ef", fontSize: 12, fontWeight: 750 }} />}<Tooltip formatter={(value, name) => {
         const metric = metricDefinitions[String(name)];
         return [metric ? formatMetricValue(metric, value as number) : value, metric ? metricLabel(i18n, metric.id) : name];
       }} /><Legend formatter={(value) => metricDefinitions[String(value)] ? metricLabel(i18n, String(value)) : value} />{selectedMetrics.map(metric => <Line key={metric.id} type="monotone" dataKey={metric.id} stroke={metric.color} dot={false} strokeWidth={2.4} connectNulls />)}<Brush dataKey="at" height={32} stroke="#55b964" fill="#10202a" travellerWidth={12} startIndex={activeZoomRange?.startIndex ?? 0} endIndex={activeZoomRange?.endIndex ?? chartData.length - 1} onChange={range => setZoomRange(normalizeZoomRange(range, chartData.length))} /></LineChart></ResponsiveContainer></div>}

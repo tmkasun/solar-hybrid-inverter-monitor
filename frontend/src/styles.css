@@ -567,7 +567,33 @@ pre {
 .analysis-panel-actions {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+}
+
+.zero-line-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid #45606f;
+    border-radius: 7px;
+    background: #10202a;
+    color: #d7e7ef;
+    font-size: .86rem;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.zero-line-toggle.active {
+    border-color: #d7e7ef;
+    background: #233540;
+    color: #edf6fa;
+}
+
+.zero-line-toggle input {
+    accent-color: #d7e7ef;
 }
 
 .zoom-reset {
