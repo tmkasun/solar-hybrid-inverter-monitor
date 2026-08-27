@@ -488,7 +488,7 @@ async def test_jkbms_ble_settings_connects_without_status_bootstrap():
 
         async def write_gatt_char(self, characteristic, data, response=False):
             self.writes.append(bytes(data))
-            if data[4] == 0x97:
+            if data[4] == 0x96:
                 self.notify_callback(characteristic, sample_jkbms_settings_frame_24s())
 
         async def disconnect(self):
@@ -501,7 +501,7 @@ async def test_jkbms_ble_settings_connects_without_status_bootstrap():
         await bms.close()
 
     assert settings.values["max_charge_current"] == 25.0
-    assert [command[4] for command in FakeBleakClient.instances[0].writes] == [0x97]
+    assert [command[4] for command in FakeBleakClient.instances[0].writes] == [0x96]
 
 
 @pytest.mark.asyncio
@@ -541,7 +541,7 @@ async def test_jkbms_ble_setting_write_requires_read_back_match():
             self.writes.append(bytes(data))
             if data[4] == 0x0C:
                 self.max_charge_current = int.from_bytes(data[6:10], "little") / 1000
-            if data[4] == 0x97:
+            if data[4] == 0x96:
                 frame = sample_jkbms_settings_frame_24s(max_charge_current=self.max_charge_current)
                 self.notify_callback(characteristic, frame[:120])
                 self.notify_callback(characteristic, frame[120:])
@@ -593,7 +593,7 @@ async def test_jkbms_ble_setting_write_fails_on_read_back_mismatch():
             self.notify_callback = None
 
         async def write_gatt_char(self, characteristic, data, response=False):
-            if data[4] == 0x97:
+            if data[4] == 0x96:
                 self.notify_callback(characteristic, sample_jkbms_settings_frame_24s(max_charge_current=25.0))
 
         async def disconnect(self):
@@ -652,7 +652,7 @@ async def test_jkbms_ble_debug_scan_runs_before_connect_when_debug_enabled(monke
 
 
 @pytest.mark.asyncio
-async def test_jkbms_ble_reports_disconnect_before_status_frame():
+async def test_jkbms_ble_reports_disconnect_before_requested_frame():
     class FakeCharacteristic:
         def __init__(self, properties):
             self.uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
@@ -690,7 +690,7 @@ async def test_jkbms_ble_reports_disconnect_before_status_frame():
 
     bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, DisconnectingBleakClient, bootstrap_seconds=0)
 
-    with pytest.raises(BmsError, match="disconnected before a status frame"):
+    with pytest.raises(BmsError, match="disconnected before a requested frame"):
         await bms.status()
 
 

@@ -26,7 +26,7 @@ JK_BMS_SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb"
 JK_BMS_CHARACTERISTIC_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
 JK_BMS_FRAME_HEADER = b"\x55\xaa\xeb\x90"
 JK_BMS_COMMAND_HEADER = b"\xaa\x55\x90\xeb"
-JK_BMS_CELL_INFO_COMMAND = 0x96
+JK_BMS_SETTINGS_COMMAND = 0x96
 JK_BMS_DEVICE_INFO_COMMAND = 0x97
 JK_BMS_MIN_FRAME_SIZE = 300
 JK_BMS_MAX_FRAME_SIZE = 400
@@ -440,7 +440,7 @@ class JkbmsBleBms(BaseBms):
                 if self.bootstrap_seconds:
                     logger.debug("Waiting %.1fs after JK-BMS device-info request before cell-info request", self.bootstrap_seconds)
                     await asyncio.sleep(self.bootstrap_seconds)
-                await self._write_command(JK_BMS_CELL_INFO_COMMAND)
+                await self._write_command(JK_BMS_SETTINGS_COMMAND)
             else:
                 logger.info("JK-BMS BLE connected")
         except BmsError:
@@ -519,10 +519,12 @@ class JkbmsBleBms(BaseBms):
         return write_char, notify_char
 
     async def _request_cell_info(self) -> None:
-        await self._write_command(JK_BMS_CELL_INFO_COMMAND)
+        # JK02 starts runtime cell-data notifications after the device-info
+        # request and the 0x96 settings request have both been sent.
+        await self._write_command(JK_BMS_SETTINGS_COMMAND)
 
     async def _request_settings_info(self) -> None:
-        await self._write_command(JK_BMS_DEVICE_INFO_COMMAND)
+        await self._write_command(JK_BMS_SETTINGS_COMMAND)
 
     async def _write_command(self, command: int) -> None:
         await self._write_payload(build_jkbms_command(command), "command", command)
@@ -651,7 +653,7 @@ class JkbmsBleBms(BaseBms):
         self.notify_char = None
         self.write_char = None
         self.frame_buffer.clear()
-        self.disconnect_error = "JK-BMS BLE device disconnected before a status frame was received"
+        self.disconnect_error = "JK-BMS BLE device disconnected before a requested frame was received"
         self._status_event.set()
         self._settings_event.set()
 
