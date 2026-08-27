@@ -15,7 +15,7 @@ from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response, W
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .bms import BmsError, BmsStatus, apply_bms_to_status, bms_from_settings
+from .bms import BmsError, BmsStatus, BmsUnsupportedError, BmsValidationError, apply_bms_to_status, bms_from_settings
 from .capabilities import command_for, confirmation_for, public_capabilities
 from .config import settings
 from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInverter
@@ -55,6 +55,11 @@ class LoginRequest(BaseModel):
 
 class ChangeRequest(BaseModel):
     value: str
+    confirmation: str
+
+
+class BmsSettingChangeRequest(BaseModel):
+    value: Any
     confirmation: str
 
 
@@ -366,6 +371,25 @@ async def audit(_: str = Depends(session_auth)) -> dict[str, Any]:
     return {"entries": state.storage.audit_rows()}
 
 
+@app.get("/api/bms/settings")
+async def get_bms_settings(_: str = Depends(session_auth)) -> dict[str, Any]:
+    try:
+        return (await state.bms.settings()).to_dict()
+    except BmsUnsupportedError as exc:
+        return {
+            "supported": False,
+            "settings": [],
+            "values": {},
+            "protocol": settings.bms_protocol,
+            "cell_count": settings.bms_cell_count,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "error": str(exc),
+        }
+    except BmsError as exc:
+        logger.warning("BMS settings read failed: %s", exc)
+        raise HTTPException(502, str(exc)) from exc
+
+
 @app.get("/api/diagnostics")
 async def diagnostics(_: str = Depends(session_auth)) -> dict[str, Any]:
     return {"diagnostics": state.diagnostics, "latest": state.latest, "bms": state.latest_bms.to_dict()}
@@ -427,6 +451,42 @@ async def change_setting(key: str, body: ChangeRequest, _: str = Depends(session
         state.storage.audit("setting_change", "failed", key, new_value=body.value, detail=str(exc))
         await state.broadcast({"type": "command_result", "data": {"key": key, "value": body.value, "ok": False, "error": str(exc)}})
         raise HTTPException(502, str(exc))
+
+
+@app.post("/api/bms/settings/{key}")
+async def change_bms_setting(key: str, body: BmsSettingChangeRequest, _: str = Depends(session_auth)) -> dict[str, Any]:
+    confirmation = f"APPLY BMS {key}"
+    if body.confirmation != confirmation:
+        raise HTTPException(422, f"confirmation must equal {confirmation}")
+    try:
+        logger.info("Applying BMS setting %s=%s", key, body.value)
+        result = await state.bms.apply_setting(key, body.value)
+        state.storage.audit(
+            "bms_setting_change",
+            "accepted",
+            key,
+            old_value=None if result.old_value is None else str(result.old_value),
+            new_value=str(result.new_value),
+            detail=f"register=0x{result.register:02x} payload={result.payload}",
+        )
+        await state.broadcast({"type": "bms_command_result", "data": {"key": key, "value": result.new_value, "ok": True}})
+        if settings.bms_mode.lower() != "disabled":
+            try:
+                await state.poll_bms()
+            except Exception:
+                logger.exception("BMS telemetry refresh after setting change failed")
+        return result.to_dict()
+    except BmsValidationError as exc:
+        state.storage.audit("bms_setting_change", "rejected", key, new_value=str(body.value), detail=str(exc))
+        raise HTTPException(422, str(exc)) from exc
+    except BmsUnsupportedError as exc:
+        state.storage.audit("bms_setting_change", "rejected", key, new_value=str(body.value), detail=str(exc))
+        raise HTTPException(409, str(exc)) from exc
+    except BmsError as exc:
+        logger.exception("BMS setting change %s=%s failed", key, body.value)
+        state.storage.audit("bms_setting_change", "failed", key, new_value=str(body.value), detail=str(exc))
+        await state.broadcast({"type": "bms_command_result", "data": {"key": key, "value": body.value, "ok": False, "error": str(exc)}})
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.websocket("/ws")

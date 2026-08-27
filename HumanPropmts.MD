@@ -27,3 +27,8 @@
 -------
 
 - I'm using JK BMS with my battery pack of 28V (8 x 120AH prismetic batteries). I support communication over bluetooth and has inbuild bluetooth module. My Raspbery pi 3 B+ also has bluetooth module and i could connect to the BMS using bluetooth. I previously used this https://github.com/tmkasun/solar-hybrid-inverter-monitor/blob/main/inverter-api/run.jkbms.sh jkbms tool to read the data from the BMS. I want to read data from the BMS and integrate it to the app. If you want we could first write some cli tools or commands to check the possible implementation plan and then we could do the implementation.
+
+
+- In the JKBMS app we could set cut off voltage and cut off current for the battery pack. We could also set the charge and discharge current limits. Can we implement those features in our app as well? We could provide a UI to set these parameters and send the commands to the BMS over bluetooth. We should also provide feedback to the user if the command was successful or if there was an error.
+
+- When authenticating, UI doesn't show a loading spinner or progress bar. It just shows a blank screen until the authentication is complete. We should show a loading spinner or progress bar to indicate that the authentication is in progress.

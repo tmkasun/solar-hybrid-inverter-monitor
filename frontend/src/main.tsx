@@ -7,7 +7,7 @@ import { api } from "./api";
 import type { HistoryRequest } from "./api";
 import { createI18n, groupLabel, languageOptions, languageStorageKey, metricLabel, normalizeLanguage, settingChoiceLabel, settingDetailLabel, settingResetLabel, settingTitleLabel, settingWarningLabel, statusFlagDescription, statusFlagLabel, storedLanguage } from "./i18n";
 import type { I18n, Language, TranslationKey } from "./i18n";
-import type { BmsStatus, Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
+import type { BmsSettingCategory, BmsSettingSpec, BmsSettingsResponse, BmsStatus, Capability, DiagnosticsResponse, HistorySample, HistoryValue, Status, StatusValues } from "./types";
 import "./styles.css";
 
 const energySystemBackground = new URL("./assets/energy-system-background.png", import.meta.url).href;
@@ -34,7 +34,7 @@ function App() {
     } catch (error) { setMessage(error instanceof Error ? error.message : i18n.t("message.unableToReachApi")); }
   };
   useEffect(() => { localStorage.setItem(languageStorageKey, language); document.documentElement.lang = i18n.locale; }, [language, i18n.locale]);
-  useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? i18n.t("message.settingApplied") : i18n.t("message.commandFailed", { error: data.data.error })); }; return () => socket.close(); }, [i18n]);
+  useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? i18n.t("message.settingApplied") : i18n.t("message.commandFailed", { error: data.data.error })); if (data.type === "bms_command_result") setMessage(data.data.ok ? i18n.t("bmsSettings.updated", { setting: bmsSettingTitle(data.data.key), value: String(data.data.value) }) : i18n.t("message.commandFailed", { error: data.data.error })); }; return () => socket.close(); }, [i18n]);
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
@@ -95,7 +95,7 @@ function App() {
       <Route path="/overview" element={<Overview status={status} i18n={i18n} />} />
       <Route path="/analysis" element={<DataAnalysis i18n={i18n} />} />
       <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage i18n={i18n} />} />
-      <Route path="/settings" element={<Settings authenticated={authenticated} authenticating={authenticating} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} i18n={i18n} />} />
+      <Route path="/settings" element={<Settings authenticated={authenticated} authenticating={authenticating} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} onMessage={setMessage} i18n={i18n} />} />
       <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} i18n={i18n} />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
@@ -1302,13 +1302,14 @@ const priorityAliases: Record<string, Record<string, string>> = {
   charger_source_priority: { "0": "utility", "00": "utility", utility: "utility", "1": "solar_first", "01": "solar_first", solar_first: "solar_first", "2": "solar_utility", "02": "solar_utility", solar_utility: "solar_utility", "3": "solar", "03": "solar", solar: "solar" },
 };
 
-function Settings({ authenticated, authenticating, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, i18n }: { authenticated: boolean; authenticating: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void> } & I18nProps) {
+function Settings({ authenticated, authenticating, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, onMessage, i18n }: { authenticated: boolean; authenticating: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void>; onMessage: (message: string) => void } & I18nProps) {
   if (!authenticated) return <section className="panel login"><h2>{i18n.t("settings.adminSignIn")}</h2><p>{i18n.t("settings.signInRequired")}</p><form onSubmit={login} aria-busy={authenticating}><input type="password" required value={password} disabled={authenticating} onChange={e => setPassword(e.target.value)} placeholder={i18n.t("settings.password")}/><button disabled={authenticating}>{authenticating && <i className="spinner" aria-hidden="true" />}{authenticating ? i18n.t("settings.authenticating") : i18n.t("settings.signIn")}</button></form></section>;
   const resetDisabled = Boolean(pendingSetting) || capabilities.length === 0;
   return <section className="settings-page">
     <div className="section-title"><div><h2>{i18n.t("settings.title")}</h2><p>{i18n.t("settings.subtitle")}</p></div><div className="settings-actions"><button className="quiet danger" disabled={resetDisabled} onClick={() => void onResetDefaults()}>{pendingSetting ? i18n.t("settings.applying") : i18n.t("settings.resetDefaults")}</button><button className="quiet" onClick={() => void logout()}>{i18n.t("settings.signOut")}</button></div></div>
     {capabilities.length === 0 && <div className="panel settings-empty"><b>{i18n.t("settings.noPriorities")}</b><p>{i18n.t("settings.noPrioritiesDetail")}</p></div>}
     {capabilities.map(capability => <SettingCard key={capability.key} capability={capability} currentValue={currentSettings[capability.key]} pendingSetting={pendingSetting} onChange={onChange} i18n={i18n} />)}
+    <BmsSettingsPanel onMessage={onMessage} i18n={i18n} />
   </section>;
 }
 
@@ -1339,6 +1340,120 @@ function SettingCard({ capability, currentValue, pendingSetting, onChange, i18n 
       <aside className="setting-reset-note"><b>{i18n.t("settings.default")}</b><span>{settingResetLabel(i18n, capability.key)}</span></aside>
     </div>
   </article>;
+}
+
+const bmsSettingCategories: BmsSettingCategory[] = ["electrical", "temperature", "balancing", "system", "switches"];
+
+function BmsSettingsPanel({ onMessage, i18n }: { onMessage: (message: string) => void } & I18nProps) {
+  const [data, setData] = useState<BmsSettingsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [pendingKey, setPendingKey] = useState("");
+  const [error, setError] = useState("");
+
+  const loadBmsSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      setData(await api.bmsSettings());
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : i18n.t("bmsSettings.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  }, [i18n]);
+
+  useEffect(() => { void loadBmsSettings(); }, [loadBmsSettings]);
+
+  const applyBmsSetting = async (spec: BmsSettingSpec, value: number | boolean) => {
+    const label = bmsSettingValueLabel(spec, value, data?.cell_count || spec.cell_count || 1, i18n);
+    if (!window.confirm(i18n.t("confirm.applyBmsSetting", { setting: bmsSettingTitle(spec.key, spec.label), value: label }))) return;
+    setPendingKey(spec.key);
+    try {
+      const result = await api.changeBmsSetting(spec.key, value);
+      setData(result.settings);
+      setError("");
+      onMessage(i18n.t("bmsSettings.updated", { setting: bmsSettingTitle(spec.key, spec.label), value: bmsSettingValueLabel(spec, result.verified_value ?? result.new_value, result.settings.cell_count, i18n) }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : i18n.t("bmsSettings.changeError"));
+    } finally {
+      setPendingKey("");
+    }
+  };
+
+  const grouped = bmsSettingCategories.map(category => ({
+    category,
+    settings: data?.settings.filter(setting => setting.category === category) || [],
+  })).filter(group => group.settings.length > 0);
+
+  return <article className="panel bms-settings-panel">
+    <div className="bms-settings-head">
+      <div><h3>{i18n.t("bmsSettings.title")}</h3><p>{i18n.t("bmsSettings.subtitle")}</p></div>
+      <button className="quiet" disabled={loading || Boolean(pendingKey)} onClick={() => void loadBmsSettings()}>{loading ? i18n.t("bmsSettings.loading") : i18n.t("bmsSettings.refresh")}</button>
+    </div>
+    {error && <p className="error">{error}</p>}
+    {loading && !data && <div className="settings-empty"><b>{i18n.t("bmsSettings.loading")}</b></div>}
+    {data && !data.supported && <div className="settings-empty"><b>{i18n.t("bmsSettings.unsupported")}</b><p>{data.error || i18n.t("settings.unavailable")}</p></div>}
+    {data?.supported && grouped.map(group => <section key={group.category} className="bms-setting-group">
+      <h4>{i18n.t(`bmsSettings.group.${group.category}` as TranslationKey)}</h4>
+      <div className="bms-setting-grid">{group.settings.map(spec => <BmsSettingControl key={spec.key} spec={spec} value={data.values[spec.key]} cellCount={data.cell_count} pending={pendingKey === spec.key} disabled={Boolean(pendingKey) || !spec.writable} onApply={applyBmsSetting} i18n={i18n} />)}</div>
+    </section>)}
+  </article>;
+}
+
+function BmsSettingControl({ spec, value, cellCount, pending, disabled, onApply, i18n }: { spec: BmsSettingSpec; value: number | boolean | null | undefined; cellCount: number; pending: boolean; disabled: boolean; onApply: (spec: BmsSettingSpec, value: number | boolean) => Promise<void> } & I18nProps) {
+  const [draft, setDraft] = useState(() => bmsDraftValue(spec, value, cellCount));
+  useEffect(() => { setDraft(bmsDraftValue(spec, value, cellCount)); }, [spec.key, value, cellCount]);
+  const title = bmsSettingTitle(spec.key, spec.label);
+  const hasValue = value !== null && value !== undefined;
+
+  if (spec.kind === "switch") {
+    const checked = Boolean(value);
+    return <div className={`bms-setting-control switch-control ${disabled ? "disabled" : ""}`}>
+      <div><strong>{title}</strong><small>{spec.writable ? `${i18n.t("bmsSettings.current")}: ${checked ? i18n.t("bmsSettings.on") : i18n.t("bmsSettings.off")}` : spec.note || i18n.t("bmsSettings.disabled")}</small></div>
+      <label className="switch-toggle"><input type="checkbox" checked={checked} disabled={disabled} onChange={event => void onApply(spec, event.target.checked)} /><span />{pending && <i className="spinner" aria-label={i18n.t("settings.applying")} />}</label>
+    </div>;
+  }
+
+  const scale = spec.voltage_scope === "cell" ? Math.max(1, cellCount) : 1;
+  const inputMin = spec.min === null || spec.min === undefined ? undefined : spec.min * scale;
+  const inputMax = spec.max === null || spec.max === undefined ? undefined : spec.max * scale;
+  const inputStep = spec.voltage_scope === "cell" ? 0.01 : spec.step || "any";
+  const numericValue = typeof value === "number" ? value : null;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) return;
+    const apiValue = spec.voltage_scope === "cell" ? parsed / scale : parsed;
+    void onApply(spec, Number(apiValue.toFixed(3)));
+  };
+  return <form className={`bms-setting-control ${disabled ? "disabled" : ""}`} onSubmit={submit}>
+    <label><span>{title}</span><input type="number" value={draft} min={inputMin} max={inputMax} step={inputStep} disabled={disabled} onChange={event => setDraft(event.target.value)} /></label>
+    <div className="bms-setting-meta">
+      <span>{hasValue ? `${i18n.t("bmsSettings.current")}: ${bmsSettingValueLabel(spec, value, cellCount, i18n)}` : i18n.t("settings.unavailable")}</span>
+      {spec.voltage_scope === "cell" && numericValue !== null && <span>{i18n.t("bmsSettings.cellVoltage")}: {numericValue.toFixed(3)} V</span>}
+      {spec.voltage_scope === "cell" && numericValue !== null && <span>{i18n.t("bmsSettings.packVoltage")}: {(numericValue * cellCount).toFixed(2)} V</span>}
+      {!spec.writable && <span>{spec.note || i18n.t("bmsSettings.disabled")}</span>}
+    </div>
+    <button disabled={disabled || !draft}>{pending && <i className="spinner" aria-hidden="true" />}{pending ? i18n.t("settings.applying") : i18n.t("bmsSettings.apply")}</button>
+  </form>;
+}
+
+function bmsDraftValue(spec: BmsSettingSpec, value: number | boolean | null | undefined, cellCount: number) {
+  if (typeof value !== "number") return "";
+  const scale = spec.voltage_scope === "cell" ? Math.max(1, cellCount) : 1;
+  const displayed = value * scale;
+  return String(Number(displayed.toFixed(spec.voltage_scope === "cell" ? 2 : 3)));
+}
+
+function bmsSettingValueLabel(spec: BmsSettingSpec, value: number | boolean | null | undefined, cellCount: number, i18n?: I18n) {
+  if (typeof value === "boolean") return value ? i18n?.t("bmsSettings.on") || "On" : i18n?.t("bmsSettings.off") || "Off";
+  if (typeof value !== "number") return "-";
+  if (spec.voltage_scope === "cell") return `${(value * Math.max(1, cellCount)).toFixed(2)} V pack / ${value.toFixed(3)} V cell`;
+  return `${Number(value.toFixed(3))}${spec.unit ? ` ${spec.unit}` : ""}`;
+}
+
+function bmsSettingTitle(key: string, fallback?: string) {
+  return fallback || key.split("_").map(part => part.toUpperCase() === "SOC" ? "SOC" : part[0].toUpperCase() + part.slice(1)).join(" ");
 }
 
 function PriorityDiagram({ settingKey, value, i18n }: { settingKey: string; value: string } & I18nProps) {

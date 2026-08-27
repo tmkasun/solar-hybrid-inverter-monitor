@@ -27,4 +27,10 @@ describe("i18n helpers", () => {
     expect(settingWarningLabel(si, "future_setting", "Future warning")).toBe("Future warning");
     expect(statusFlagLabel(si, "future_flag", "Future flag")).toBe("Future flag");
   });
+
+  it("translates BMS settings panel labels with English fallback coverage", () => {
+    const ta = createI18n("ta");
+    expect(ta.t("bmsSettings.title")).toContain("JK-BMS");
+    expect(ta.t("bmsSettings.group.electrical")).not.toContain("bmsSettings.group");
+  });
 });

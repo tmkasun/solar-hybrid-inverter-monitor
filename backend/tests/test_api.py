@@ -7,7 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.main as main_module
-from app.bms import BmsCell, BmsError, BmsStatus
+from app.bms import BmsCell, BmsError, BmsStatus, JkbmsCliBms, SimulatorBms
 from app.main import app, state
 from app.storage import Storage
 
@@ -110,6 +110,80 @@ async def test_status_uses_fresh_bms_battery_values_and_keeps_inverter_values():
     finally:
         state.latest_bms = previous_bms
         await state.update_latest(previous_inverter)
+
+
+@pytest.mark.asyncio
+async def test_bms_settings_require_auth_and_support_simulator_writes(tmp_path):
+    previous_bms = state.bms
+    previous_storage = state.storage
+    previous_settings = main_module.settings
+    previous_sessions = dict(state.sessions)
+    try:
+        state.bms = SimulatorBms(8)
+        state.storage = Storage(str(tmp_path / "bms-settings.db"))
+        state.sessions.clear()
+        state.sessions["test-session"] = "csrf"
+        monkey_settings = SimpleNamespace(bms_mode="simulator", bms_protocol="JK02", bms_cell_count=8)
+        main_module.settings = monkey_settings
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            denied = await client.get("/api/bms/settings")
+            assert denied.status_code == 401
+
+            client.cookies.set("sako_session", "test-session")
+            settings_response = await client.get("/api/bms/settings", headers={"X-CSRF-Token": "csrf"})
+            assert settings_response.status_code == 200
+            assert settings_response.json()["supported"] is True
+
+            changed = await client.post(
+                "/api/bms/settings/max_charge_current",
+                headers={"X-CSRF-Token": "csrf"},
+                json={"value": 22.5, "confirmation": "APPLY BMS max_charge_current"},
+            )
+            assert changed.status_code == 200
+            assert changed.json()["verified_value"] == 22.5
+
+            audit = state.storage.audit_rows()
+            assert audit[0]["action"] == "bms_setting_change"
+            assert audit[0]["result"] == "accepted"
+    finally:
+        state.bms = previous_bms
+        state.storage.close()
+        state.storage = previous_storage
+        main_module.settings = previous_settings
+        state.sessions.clear()
+        state.sessions.update(previous_sessions)
+
+
+@pytest.mark.asyncio
+async def test_bms_setting_write_rejects_cli_only_backend(tmp_path):
+    previous_bms = state.bms
+    previous_storage = state.storage
+    previous_sessions = dict(state.sessions)
+    try:
+        state.bms = JkbmsCliBms("AA:BB:CC:DD:EE:FF", command="jkbms")
+        state.storage = Storage(str(tmp_path / "bms-cli-settings.db"))
+        state.sessions.clear()
+        state.sessions["test-session"] = "csrf"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.cookies.set("sako_session", "test-session")
+            response = await client.post(
+                "/api/bms/settings/max_charge_current",
+                headers={"X-CSRF-Token": "csrf"},
+                json={"value": 22.5, "confirmation": "APPLY BMS max_charge_current"},
+            )
+
+        assert response.status_code == 409
+        assert state.storage.audit_rows()[0]["result"] == "rejected"
+    finally:
+        state.bms = previous_bms
+        state.storage.close()
+        state.storage = previous_storage
+        state.sessions.clear()
+        state.sessions.update(previous_sessions)
 
 
 @pytest.mark.asyncio

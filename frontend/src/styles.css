@@ -1013,6 +1013,145 @@ pre {
     overflow: hidden;
 }
 
+.bms-settings-panel {
+    margin-top: 18px;
+}
+
+.bms-settings-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.bms-settings-head h3 {
+    margin: 0;
+}
+
+.bms-settings-head p {
+    margin: 7px 0 0;
+    color: #aebfca;
+}
+
+.bms-setting-group {
+    margin-top: 18px;
+}
+
+.bms-setting-group h4 {
+    margin: 0 0 10px;
+    color: #d7e7ef;
+    font-size: .95rem;
+}
+
+.bms-setting-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 10px;
+}
+
+.bms-setting-control {
+    min-width: 0;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #29404d;
+    border-radius: 8px;
+    background: #10202a;
+}
+
+.bms-setting-control.disabled {
+    opacity: .72;
+}
+
+.bms-setting-control label {
+    display: grid;
+    gap: 7px;
+}
+
+.bms-setting-control label span,
+.bms-setting-control strong {
+    color: #edf7fb;
+    font-size: .93rem;
+}
+
+.bms-setting-control input[type="number"] {
+    width: 100%;
+    min-width: 0;
+}
+
+.bms-setting-meta {
+    display: grid;
+    gap: 4px;
+    color: #aebfca;
+    font-size: .8rem;
+    line-height: 1.35;
+}
+
+.bms-setting-control button {
+    justify-self: start;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.switch-control {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+}
+
+.switch-control small {
+    display: block;
+    margin-top: 5px;
+    color: #aebfca;
+    line-height: 1.35;
+}
+
+.switch-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.switch-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.switch-toggle span {
+    width: 46px;
+    height: 26px;
+    border: 1px solid #45606f;
+    border-radius: 999px;
+    background: #172733;
+    transition: background .18s ease, border-color .18s ease;
+}
+
+.switch-toggle span::after {
+    content: "";
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    top: 3px;
+    left: 3px;
+    border-radius: 50%;
+    background: #aebfca;
+    transition: transform .18s ease, background .18s ease;
+}
+
+.switch-toggle input:checked + span {
+    border-color: #55b964;
+    background: #1f5135;
+}
+
+.switch-toggle input:checked + span::after {
+    transform: translateX(20px);
+    background: #a8efc8;
+}
+
 .priority-diagram-bg {
     position: absolute;
     inset: 0;

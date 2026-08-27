@@ -1,4 +1,4 @@
-"""Read-only JK-BMS telemetry helpers.
+"""JK-BMS telemetry and settings helpers.
 
 The API prefers a persistent BLE connection for hardware polling and keeps the
 older mpp-solar ``jkbms`` command path available as a fallback backend. The
@@ -33,6 +33,14 @@ JK_BMS_MAX_FRAME_SIZE = 400
 
 
 class BmsError(RuntimeError):
+    pass
+
+
+class BmsUnsupportedError(BmsError):
+    pass
+
+
+class BmsValidationError(BmsError):
     pass
 
 
@@ -115,9 +123,89 @@ class BmsStatus:
         return age.total_seconds() <= max_age_seconds
 
 
+@dataclass(frozen=True)
+class JkbmsSettingSpec:
+    key: str
+    label: str
+    category: str
+    kind: str
+    unit: str = ""
+    min_value: float | None = None
+    max_value: float | None = None
+    step: float | None = None
+    factor: float = 1.0
+    length: int = 4
+    jk02_24_register: int | None = None
+    jk02_32_register: int | None = None
+    jk02_24_offset: int | None = None
+    jk02_32_offset: int | None = None
+    signed: bool = False
+    voltage_scope: str | None = None
+    verified: bool = True
+    note: str | None = None
+
+    def register_for(self, layout: str) -> int | None:
+        return self.jk02_32_register if layout == "32s" else self.jk02_24_register
+
+    def offset_for(self, layout: str) -> int | None:
+        return self.jk02_32_offset if layout == "32s" else self.jk02_24_offset
+
+    def to_public(self, layout: str, cell_count: int) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "category": self.category,
+            "kind": self.kind,
+            "unit": self.unit,
+            "min": self.min_value,
+            "max": self.max_value,
+            "step": self.step,
+            "verified": self.verified and self.register_for(layout) is not None and self.offset_for(layout) is not None,
+            "writable": self.verified and self.register_for(layout) is not None and self.offset_for(layout) is not None,
+            "voltage_scope": self.voltage_scope,
+            "cell_count": cell_count,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class BmsSettingsSnapshot:
+    supported: bool
+    settings: list[dict[str, Any]]
+    values: dict[str, Any]
+    protocol: str
+    cell_count: int
+    captured_at: str
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BmsSettingWriteResult:
+    ok: bool
+    key: str
+    old_value: Any
+    new_value: Any
+    verified_value: Any
+    register: int
+    payload: str
+    settings: BmsSettingsSnapshot
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 class BaseBms:
     async def status(self) -> BmsStatus:
         raise NotImplementedError
+
+    async def settings(self) -> BmsSettingsSnapshot:
+        raise BmsUnsupportedError("BMS settings are only available for JK-BMS BLE or simulator mode")
+
+    async def apply_setting(self, key: str, value: Any) -> BmsSettingWriteResult:
+        raise BmsUnsupportedError("BMS setting writes are only available for JK-BMS BLE or simulator mode")
 
     async def close(self) -> None:
         return None
@@ -131,6 +219,7 @@ class DisabledBms(BaseBms):
 class SimulatorBms(BaseBms):
     def __init__(self, cell_count: int = 8):
         self.cell_count = max(1, cell_count)
+        self._settings_values = default_bms_setting_values("24s", self.cell_count)
 
     async def status(self) -> BmsStatus:
         cells = [
@@ -164,6 +253,24 @@ class SimulatorBms(BaseBms):
             raw_summary={"fixture": "simulator"},
         )
 
+    async def settings(self) -> BmsSettingsSnapshot:
+        return bms_settings_snapshot(self._settings_values, protocol="JK02", cell_count=self.cell_count, source_supported=True)
+
+    async def apply_setting(self, key: str, value: Any) -> BmsSettingWriteResult:
+        layout = jkbms_settings_layout("JK02", self.cell_count)
+        spec = bms_setting_spec(key)
+        if not spec.to_public(layout, self.cell_count)["writable"]:
+            raise BmsUnsupportedError(f"BMS setting {key!r} is not verified for JK-BMS {layout}")
+        normalized = normalize_bms_setting_value(spec, value)
+        old_value = self._settings_values.get(key)
+        self._settings_values[key] = normalized
+        register = spec.register_for(layout)
+        if register is None:
+            raise BmsUnsupportedError(f"BMS setting {key!r} is not writable for JK-BMS {layout}")
+        payload = build_jkbms_register_frame(register, encode_bms_setting_value(spec, normalized), spec.length)
+        snapshot = await self.settings()
+        return BmsSettingWriteResult(True, key, old_value, normalized, snapshot.values.get(key), register, payload.hex(), snapshot)
+
 
 class JkbmsBleBms(BaseBms):
     def __init__(self, address: str, name: str = "", protocol: str = "JK02", cell_count: int = 8,
@@ -183,11 +290,14 @@ class JkbmsBleBms(BaseBms):
         self.frame_buffer = bytearray()
         self.latest_status: BmsStatus | None = None
         self.latest_status_monotonic = 0.0
+        self.latest_settings: BmsSettingsSnapshot | None = None
         self.status_version = 0
+        self.settings_version = 0
         self.connected = False
         self.disconnect_error: str | None = None
         self._lock = asyncio.Lock()
         self._status_event = asyncio.Event()
+        self._settings_event = asyncio.Event()
 
     async def status(self) -> BmsStatus:
         if not self.address:
@@ -230,6 +340,56 @@ class JkbmsBleBms(BaseBms):
     async def close(self) -> None:
         await self._disconnect()
 
+    async def settings(self) -> BmsSettingsSnapshot:
+        if not self.address:
+            raise BmsUnsupportedError("BMS_BLUETOOTH_ADDRESS is required for BMS_MODE=jkbms")
+        try:
+            async with self._lock:
+                await self._ensure_connected()
+                starting_version = self.settings_version
+                await self._request_settings_info()
+            await asyncio.wait_for(self._wait_for_new_settings(starting_version), timeout=self.timeout_seconds)
+        except asyncio.TimeoutError as exc:
+            await self._disconnect()
+            raise BmsError(f"JK-BMS BLE settings timed out after {self.timeout_seconds:g}s") from exc
+        except BmsError:
+            raise
+        except Exception as exc:
+            await self._disconnect()
+            raise BmsError(f"JK-BMS BLE settings read failed: {exc}") from exc
+        assert self.latest_settings is not None
+        return self.latest_settings
+
+    async def apply_setting(self, key: str, value: Any) -> BmsSettingWriteResult:
+        if not self.address:
+            raise BmsUnsupportedError("BMS_BLUETOOTH_ADDRESS is required for BMS_MODE=jkbms")
+        layout = jkbms_settings_layout(self.protocol, self.cell_count)
+        spec = bms_setting_spec(key)
+        public_spec = spec.to_public(layout, self.cell_count)
+        if not public_spec["writable"]:
+            raise BmsUnsupportedError(f"BMS setting {key!r} is not verified for JK-BMS {layout}")
+        normalized = normalize_bms_setting_value(spec, value)
+        register = spec.register_for(layout)
+        assert register is not None
+        payload = build_jkbms_register_frame(register, encode_bms_setting_value(spec, normalized), spec.length)
+        before = await self.settings()
+        old_value = before.values.get(key)
+        try:
+            async with self._lock:
+                await self._ensure_connected()
+                logger.info("Writing JK-BMS setting %s=%s register=0x%02x", key, normalized, register)
+                await self._write_payload(payload, "setting", register)
+        except BmsError:
+            raise
+        except Exception as exc:
+            await self._disconnect()
+            raise BmsError(f"JK-BMS BLE setting write failed: {exc}") from exc
+        after = await self.settings()
+        verified_value = after.values.get(key)
+        if not bms_values_match(spec, normalized, verified_value):
+            raise BmsError(f"JK-BMS read-back mismatch for {key}: requested {normalized}, read {verified_value}")
+        return BmsSettingWriteResult(True, key, old_value, normalized, verified_value, register, payload.hex(), after)
+
     async def _wait_for_new_status(self, starting_version: int) -> None:
         while self.status_version <= starting_version:
             if self.disconnect_error:
@@ -239,6 +399,17 @@ class JkbmsBleBms(BaseBms):
                 raise BmsError(self.disconnect_error)
             await self._status_event.wait()
         if self.disconnect_error and self.status_version <= starting_version:
+            raise BmsError(self.disconnect_error)
+
+    async def _wait_for_new_settings(self, starting_version: int) -> None:
+        while self.settings_version <= starting_version:
+            if self.disconnect_error:
+                raise BmsError(self.disconnect_error)
+            self._settings_event.clear()
+            if self.disconnect_error:
+                raise BmsError(self.disconnect_error)
+            await self._settings_event.wait()
+        if self.disconnect_error and self.settings_version <= starting_version:
             raise BmsError(self.disconnect_error)
 
     async def _ensure_connected(self) -> None:
@@ -343,13 +514,19 @@ class JkbmsBleBms(BaseBms):
     async def _request_cell_info(self) -> None:
         await self._write_command(JK_BMS_CELL_INFO_COMMAND)
 
+    async def _request_settings_info(self) -> None:
+        await self._write_command(JK_BMS_DEVICE_INFO_COMMAND)
+
     async def _write_command(self, command: int) -> None:
+        await self._write_payload(build_jkbms_command(command), "command", command)
+
+    async def _write_payload(self, payload: bytes, kind: str, identifier: int) -> None:
         if self.client is None or self.write_char is None:
             raise BmsError("JK-BMS BLE client is not connected")
-        payload = build_jkbms_command(command)
         logger.debug(
-            "Writing JK-BMS BLE command: command=0x%02x characteristic=%s payload=%s",
-            command,
+            "Writing JK-BMS BLE %s: id=0x%02x characteristic=%s payload=%s",
+            kind,
+            identifier,
             _characteristic_description(self.write_char),
             payload.hex(),
         )
@@ -405,6 +582,15 @@ class JkbmsBleBms(BaseBms):
         frame = bytes(self.frame_buffer[:JK_BMS_MIN_FRAME_SIZE])
         self.frame_buffer.clear()
         frame_type = frame[4]
+        if frame_type == 0x01:
+            self.latest_settings = parse_jkbms_ble_settings(
+                frame,
+                protocol=self.protocol,
+                cell_count=self.cell_count,
+            )
+            self.settings_version += 1
+            self._settings_event.set()
+            return None
         if frame_type != 0x02:
             logger.debug("Ignoring JK-BMS BLE frame type 0x%02x", frame_type)
             return None
@@ -460,6 +646,7 @@ class JkbmsBleBms(BaseBms):
         self.frame_buffer.clear()
         self.disconnect_error = "JK-BMS BLE device disconnected before a status frame was received"
         self._status_event.set()
+        self._settings_event.set()
 
 
 class JkbmsCliBms(BaseBms):
@@ -487,6 +674,12 @@ class JkbmsCliBms(BaseBms):
     async def raw(self, bms_command: str = "getCellData") -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._run_json_command, bms_command)
+
+    async def settings(self) -> BmsSettingsSnapshot:
+        raise BmsUnsupportedError("BMS settings writes require the BLE backend; the jkbms CLI backend is read-only in this app")
+
+    async def apply_setting(self, key: str, value: Any) -> BmsSettingWriteResult:
+        raise BmsUnsupportedError("BMS settings writes require the BLE backend; the jkbms CLI backend is read-only in this app")
 
     def _read_status(self) -> BmsStatus:
         last_error: BmsError | None = None
@@ -564,6 +757,12 @@ class JkbmsAutoBms(BaseBms):
         await self.ble.close()
         await self.cli.close()
 
+    async def settings(self) -> BmsSettingsSnapshot:
+        return await self.ble.settings()
+
+    async def apply_setting(self, key: str, value: Any) -> BmsSettingWriteResult:
+        return await self.ble.apply_setting(key, value)
+
     def _ble_in_cooldown(self) -> bool:
         return (
             self.last_ble_failure_at is not None
@@ -602,8 +801,216 @@ def build_jkbms_command(command: int) -> bytes:
     return bytes(frame)
 
 
+def build_jkbms_register_frame(register: int, value: int, length: int) -> bytes:
+    if not 0 <= register <= 0xFF:
+        raise BmsValidationError("JK-BMS register must fit in one byte")
+    if length not in (0, 1, 2, 4):
+        raise BmsValidationError("JK-BMS register value length must be 0, 1, 2, or 4 bytes")
+    frame = bytearray(20)
+    frame[:4] = JK_BMS_COMMAND_HEADER
+    frame[4] = register & 0xFF
+    frame[5] = length & 0xFF
+    frame[6:10] = (value & 0xFFFFFFFF).to_bytes(4, "little", signed=False)
+    frame[19] = jkbms_crc(frame[:19])
+    return bytes(frame)
+
+
 def jkbms_crc(data: bytes | bytearray | memoryview) -> int:
     return sum(data) & 0xFF
+
+
+def jkbms_settings_layout(protocol: str = "JK02", cell_count: int = 8) -> str:
+    return "32s" if "32" in protocol.lower() or cell_count > 24 else "24s"
+
+
+BMS_SETTING_SPECS: tuple[JkbmsSettingSpec, ...] = (
+    JkbmsSettingSpec(
+        "smart_sleep_voltage",
+        "Smart sleep voltage",
+        "electrical",
+        "number",
+        "V",
+        0.003,
+        3.650,
+        0.001,
+        1000.0,
+        1,
+        0x01,
+        0x01,
+        6,
+        6,
+        voltage_scope="cell",
+        verified=False,
+        note="Write length differs across JK02 references; read-back mapping is not verified.",
+    ),
+    JkbmsSettingSpec("cell_voltage_undervoltage_protection", "Cell undervoltage protection", "electrical", "number", "V", 1.2, 4.350, 0.001, 1000.0, 4, 0x02, 0x02, 10, 10, voltage_scope="cell"),
+    JkbmsSettingSpec("cell_voltage_undervoltage_recovery", "Cell undervoltage recovery", "electrical", "number", "V", 1.2, 4.350, 0.001, 1000.0, 4, 0x03, 0x03, 14, 14, voltage_scope="cell"),
+    JkbmsSettingSpec("cell_voltage_overvoltage_protection", "Cell overvoltage protection", "electrical", "number", "V", 1.2, 4.350, 0.001, 1000.0, 4, 0x04, 0x04, 18, 18, voltage_scope="cell"),
+    JkbmsSettingSpec("cell_voltage_overvoltage_recovery", "Cell overvoltage recovery", "electrical", "number", "V", 1.2, 4.350, 0.001, 1000.0, 4, 0x05, 0x05, 22, 22, voltage_scope="cell"),
+    JkbmsSettingSpec("balance_trigger_voltage", "Balance trigger voltage", "balancing", "number", "V", 0.003, 1.0, 0.001, 1000.0, 4, 0x06, 0x06, 26, 26, voltage_scope="delta"),
+    JkbmsSettingSpec("cell_soc100_voltage", "SOC 100% voltage", "electrical", "number", "V", 0.003, 3.650, 0.001, 1000.0, 4, 0x07, 0x07, 30, 30, voltage_scope="cell"),
+    JkbmsSettingSpec("cell_soc0_voltage", "SOC 0% voltage", "electrical", "number", "V", 0.003, 3.650, 0.001, 1000.0, 4, 0x08, 0x08, 34, 34, voltage_scope="cell"),
+    JkbmsSettingSpec("cell_request_charge_voltage", "Requested charge voltage", "electrical", "number", "V", 0.003, 3.650, 0.001, 1000.0, 4, 0x09, 0x09, 38, 38, voltage_scope="cell"),
+    JkbmsSettingSpec("cell_request_float_voltage", "Requested float voltage", "electrical", "number", "V", 0.003, 3.650, 0.001, 1000.0, 4, 0x0A, 0x0A, 42, 42, voltage_scope="cell"),
+    JkbmsSettingSpec("power_off_voltage", "Power off voltage", "electrical", "number", "V", 1.2, 4.350, 0.01, 1000.0, 4, 0x0B, 0x0B, 46, 46, voltage_scope="cell"),
+    JkbmsSettingSpec("max_charge_current", "Max charge current", "electrical", "number", "A", 1.0, 600.1, 0.1, 1000.0, 4, 0x0C, 0x0C, 50, 50),
+    JkbmsSettingSpec("charge_overcurrent_protection_delay", "Charge overcurrent delay", "electrical", "number", "s", 2, 600, 1, 1.0, 4, 0x0D, 0x0D, 54, 54),
+    JkbmsSettingSpec("charge_overcurrent_protection_recovery_time", "Charge overcurrent recovery", "electrical", "number", "s", 2, 600, 1, 1.0, 4, 0x0E, 0x0E, 58, 58),
+    JkbmsSettingSpec("max_discharge_current", "Max discharge current", "electrical", "number", "A", 1.0, 1200.1, 0.1, 1000.0, 4, 0x0F, 0x0F, 62, 62),
+    JkbmsSettingSpec("discharge_overcurrent_protection_delay", "Discharge overcurrent delay", "electrical", "number", "s", 2, 600, 1, 1.0, 4, 0x10, 0x10, 66, 66),
+    JkbmsSettingSpec("discharge_overcurrent_protection_recovery_time", "Discharge overcurrent recovery", "electrical", "number", "s", 2, 600, 1, 1.0, 4, 0x11, 0x11, 70, 70),
+    JkbmsSettingSpec("short_circuit_protection_recovery_time", "Short-circuit recovery", "electrical", "number", "s", 2, 600, 1, 1.0, 4, 0x12, 0x12, 74, 74),
+    JkbmsSettingSpec("max_balance_current", "Max balance current", "balancing", "number", "A", 0.3, 15.0, 0.1, 1000.0, 4, 0x13, 0x13, 78, 78),
+    JkbmsSettingSpec("charge_overtemperature_protection", "Charge overtemperature protection", "temperature", "number", "C", 30, 80, 0.1, 10.0, 4, 0x14, 0x14, 82, 82),
+    JkbmsSettingSpec("charge_overtemperature_protection_recovery", "Charge overtemperature recovery", "temperature", "number", "C", 30, 80, 0.1, 10.0, 4, 0x15, 0x15, 86, 86),
+    JkbmsSettingSpec("discharge_overtemperature_protection", "Discharge overtemperature protection", "temperature", "number", "C", 30, 80, 0.1, 10.0, 4, 0x16, 0x16, 90, 90),
+    JkbmsSettingSpec("discharge_overtemperature_protection_recovery", "Discharge overtemperature recovery", "temperature", "number", "C", 30, 80, 0.1, 10.0, 4, 0x17, 0x17, 94, 94),
+    JkbmsSettingSpec("charge_undertemperature_protection", "Charge undertemperature protection", "temperature", "number", "C", -45, 20, 0.1, 10.0, 4, 0x18, 0x18, 98, 98, signed=True),
+    JkbmsSettingSpec("charge_undertemperature_protection_recovery", "Charge undertemperature recovery", "temperature", "number", "C", -45, 20, 0.1, 10.0, 4, 0x19, 0x19, 102, 102, signed=True),
+    JkbmsSettingSpec("discharge_undertemperature_protection", "Discharge undertemperature protection", "temperature", "number", "C", -40, 100, 1, 1.0, 1, None, 0x3A, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("discharge_undertemperature_protection_recovery", "Discharge undertemperature recovery", "temperature", "number", "C", -40, 100, 1, 1.0, 1, None, 0x3B, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("mosfet_overtemperature_protection", "MOSFET overtemperature protection", "temperature", "number", "C", 50, 110, 0.1, 10.0, 4, 0x1A, 0x1A, 106, 106, signed=True),
+    JkbmsSettingSpec("mosfet_overtemperature_protection_recovery", "MOSFET overtemperature recovery", "temperature", "number", "C", 50, 110, 0.1, 10.0, 4, 0x1B, 0x1B, 110, 110, signed=True),
+    JkbmsSettingSpec("cell_count", "Cell count", "system", "number", "", 2, 32, 1, 1.0, 4, 0x1C, 0x1C, 114, 114),
+    JkbmsSettingSpec("charging", "Charge MOSFET", "switches", "switch", "", 0, 1, 1, 1.0, 4, 0x1D, 0x1D, 118, 118),
+    JkbmsSettingSpec("discharging", "Discharge MOSFET", "switches", "switch", "", 0, 1, 1, 1.0, 4, 0x1E, 0x1E, 122, 122),
+    JkbmsSettingSpec("balancer", "Balancer", "switches", "switch", "", 0, 1, 1, 1.0, 4, 0x1F, 0x1F, 126, 126),
+    JkbmsSettingSpec("emergency", "Emergency mode", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x6B, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("heating", "Heating", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x27, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("disable_temperature_sensors", "Disable temperature sensors", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x28, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("display_always_on", "Display always on", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x2B, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("smart_sleep", "Smart sleep", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x2D, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("disable_pcl_module", "Disable PCL module", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x2E, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("timed_stored_data", "Timed stored data", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x2F, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("charging_float_mode", "Charging float mode", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x30, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("emergency_button_trigger", "Emergency button trigger", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x31, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("dry_contact_alarm_intermittent", "Dry contact alarm intermittent", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x32, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("discharge_overcurrent_protection_2", "Discharge OCP II", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x33, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("discharge_overcurrent_protection_3", "Discharge OCP III", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x34, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("gps_locked_charging", "GPS locked charging", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x35, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("gps_locked_discharging", "GPS locked discharging", "switches", "switch", "", 0, 1, 1, 1.0, 4, None, 0x36, verified=False, note="JK02 32S-only switch; read-back mapping is not verified."),
+    JkbmsSettingSpec("total_battery_capacity", "Total battery capacity", "system", "number", "Ah", 2, 20000, 1, 1000.0, 4, 0x20, 0x20, 130, 130),
+    JkbmsSettingSpec("short_circuit_protection_delay", "Short-circuit delay", "electrical", "number", "us", 0, 1000000, 1, 1.0, 4, 0x25, 0x21, 134, 134),
+    JkbmsSettingSpec("balancing_start_voltage", "Balancing start voltage", "balancing", "number", "V", 1.2, 4.25, 0.01, 1000.0, 4, 0x26, 0x22, 138, 138, voltage_scope="cell"),
+    JkbmsSettingSpec("voltage_calibration", "Voltage calibration", "system", "number", "V", 1.0, 200.0, 0.01, 1000.0, 4, 0x21, 0x64, verified=False, note="Read-back mapping is firmware dependent."),
+    JkbmsSettingSpec("current_calibration", "Current calibration", "system", "number", "A", 0.0, 1000.0, 0.001, 1000.0, 4, 0x24, 0x67, verified=False, note="Read-back mapping is firmware dependent."),
+    JkbmsSettingSpec("discharge_precharge_time", "Discharge precharge time", "system", "number", "s", 0, 255, 1, 1.0, 4, None, 0x25, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("heating_start_temperature", "Heating start temperature", "temperature", "number", "C", -40, 100, 1, 1.0, 1, None, 0x37, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("heating_stop_temperature", "Heating stop temperature", "temperature", "number", "C", -40, 100, 1, 1.0, 1, None, 0x38, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("smart_sleep_delay", "Smart sleep delay", "system", "number", "h", 1, 100, 1, 1.0, 1, None, 0x39, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("emergency_duration", "Emergency duration", "system", "number", "min", 1, 255, 1, 1.0, 1, None, 0xB5, verified=False, note="JK02 32S-only setting; read-back mapping is not verified."),
+    JkbmsSettingSpec("cell_request_charge_voltage_time", "Requested charge voltage time", "system", "number", "h", 0, 18.2, 0.1, 10.0, 1, None, 0xB3, verified=False, note="JK02 32S-only read-back comes from the device-info frame."),
+    JkbmsSettingSpec("cell_request_float_voltage_time", "Requested float voltage time", "system", "number", "h", 0, 18.2, 0.1, 10.0, 1, None, 0xB4, verified=False, note="JK02 32S-only read-back comes from the device-info frame."),
+    JkbmsSettingSpec("re_bulk_soc", "Re-bulk SOC", "system", "number", "%", 0, 50, 1, 1.0, 1, None, 0xB7, verified=False, note="JK02 32S-only read-back comes from the device-info frame."),
+    JkbmsSettingSpec("soc_calibration", "SOC calibration", "system", "number", "%", 0, 100, 1, 1.0, 1, None, 0x6E, verified=False, note="Read-back mapping is firmware dependent."),
+    JkbmsSettingSpec("soh_calibration", "SOH calibration", "system", "number", "%", 0, 100, 1, 1.0, 1, None, 0x6F, verified=False, note="Read-back mapping is firmware dependent."),
+)
+
+
+BMS_SETTING_SPEC_BY_KEY = {spec.key: spec for spec in BMS_SETTING_SPECS}
+
+
+def bms_setting_spec(key: str) -> JkbmsSettingSpec:
+    try:
+        return BMS_SETTING_SPEC_BY_KEY[key]
+    except KeyError as exc:
+        raise BmsUnsupportedError(f"unsupported BMS setting {key!r}") from exc
+
+
+def bms_settings_snapshot(values: dict[str, Any], *, protocol: str, cell_count: int, source_supported: bool = True,
+                          error: str | None = None) -> BmsSettingsSnapshot:
+    layout = jkbms_settings_layout(protocol, cell_count)
+    return BmsSettingsSnapshot(
+        supported=source_supported,
+        settings=[spec.to_public(layout, cell_count) for spec in BMS_SETTING_SPECS],
+        values={spec.key: values.get(spec.key) for spec in BMS_SETTING_SPECS},
+        protocol=protocol,
+        cell_count=cell_count,
+        captured_at=utc_now(),
+        error=error,
+    )
+
+
+def default_bms_setting_values(layout: str, cell_count: int) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    for spec in BMS_SETTING_SPECS:
+        if not spec.to_public(layout, cell_count)["writable"]:
+            defaults[spec.key] = None
+        elif spec.kind == "switch":
+            defaults[spec.key] = spec.key in {"charging", "discharging", "balancer"}
+        elif spec.key == "cell_count":
+            defaults[spec.key] = cell_count
+        elif spec.key == "total_battery_capacity":
+            defaults[spec.key] = 120.0
+        elif spec.min_value is not None:
+            defaults[spec.key] = round(float(spec.min_value), 3)
+        else:
+            defaults[spec.key] = None
+    return defaults
+
+
+def encode_bms_setting_value(spec: JkbmsSettingSpec, value: Any) -> int:
+    if spec.kind == "switch":
+        return 1 if bool(value) else 0
+    return int(round(float(value) * spec.factor))
+
+
+def decode_bms_setting_value(spec: JkbmsSettingSpec, frame: bytes, offset: int) -> Any:
+    if spec.kind == "switch":
+        return bool(frame[offset])
+    raw = _i32(frame, offset) if spec.signed else _u32(frame, offset)
+    value = raw / spec.factor
+    if spec.step is not None and spec.step >= 1:
+        return int(round(value))
+    return _round(value, 3)
+
+
+def normalize_bms_setting_value(spec: JkbmsSettingSpec, value: Any) -> Any:
+    if spec.kind == "switch":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "on", "yes", "enabled"}:
+                return True
+            if normalized in {"false", "0", "off", "no", "disabled"}:
+                return False
+        raise BmsValidationError(f"{spec.key} must be true or false")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise BmsValidationError(f"{spec.key} must be a number") from exc
+    if spec.min_value is not None and numeric < spec.min_value:
+        raise BmsValidationError(f"{spec.key} must be at least {spec.min_value:g}{spec.unit}")
+    if spec.max_value is not None and numeric > spec.max_value:
+        raise BmsValidationError(f"{spec.key} must be at most {spec.max_value:g}{spec.unit}")
+    if spec.step is not None and spec.step >= 1:
+        return int(round(numeric))
+    return _round(numeric, 3)
+
+
+def bms_values_match(spec: JkbmsSettingSpec, requested: Any, actual: Any) -> bool:
+    if spec.kind == "switch":
+        return bool(requested) is bool(actual)
+    if actual is None:
+        return False
+    tolerance = max((spec.step or 0.001) / 2, 0.001)
+    return abs(float(requested) - float(actual)) <= tolerance
+
+
+def parse_jkbms_ble_settings(frame: bytes, *, protocol: str = "JK02", cell_count: int = 8) -> BmsSettingsSnapshot:
+    validate_jkbms_ble_frame(frame)
+    if frame[4] != 0x01:
+        raise BmsError(f"JK-BMS frame type 0x{frame[4]:02x} is not a settings frame")
+    layout = jkbms_settings_layout(protocol, cell_count)
+    values: dict[str, Any] = {}
+    for spec in BMS_SETTING_SPECS:
+        offset = spec.offset_for(layout)
+        if offset is None or offset + 4 > len(frame) or not spec.verified:
+            values[spec.key] = None
+            continue
+        values[spec.key] = decode_bms_setting_value(spec, frame, offset)
+    return bms_settings_snapshot(values, protocol=protocol, cell_count=cell_count, source_supported=True)
 
 
 def parse_jkbms_ble_cell_info(frame: bytes, *, address: str = "", name: str = "", protocol: str = "JK02",

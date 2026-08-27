@@ -18,8 +18,12 @@ from app.bms import (
     apply_bms_to_status,
     bms_from_settings,
     bms_history_metrics,
+    bms_setting_spec,
+    build_jkbms_register_frame,
     build_jkbms_command,
     compact_process_detail,
+    encode_bms_setting_value,
+    parse_jkbms_ble_settings,
     parse_jkbms_ble_cell_info,
     normalize_mppsolar_status,
     parse_json_output,
@@ -102,6 +106,56 @@ def sample_jkbms_ble_frame_24s():
     return bytes(frame)
 
 
+def sample_jkbms_settings_frame_24s(*, max_charge_current=25.0):
+    frame = bytearray(300)
+    frame[:4] = b"\x55\xaa\xeb\x90"
+    frame[4] = 0x01
+    frame[5] = 0x4F
+
+    def set_i32(offset, value):
+        frame[offset:offset + 4] = int(value).to_bytes(4, "little", signed=True)
+
+    def set_u32(offset, value):
+        frame[offset:offset + 4] = int(value).to_bytes(4, "little", signed=False)
+
+    set_u32(6, 600)
+    set_u32(10, 2900)
+    set_u32(14, 3200)
+    set_u32(18, 3650)
+    set_u32(22, 3500)
+    set_u32(26, 10)
+    set_u32(30, 3400)
+    set_u32(34, 2800)
+    set_u32(38, 3400)
+    set_u32(42, 3375)
+    set_u32(46, 2700)
+    set_u32(50, int(max_charge_current * 1000))
+    set_u32(54, 30)
+    set_u32(58, 60)
+    set_u32(62, 150000)
+    set_u32(66, 300)
+    set_u32(70, 60)
+    set_u32(74, 60)
+    set_u32(78, 300)
+    set_u32(82, 600)
+    set_u32(86, 550)
+    set_u32(90, 650)
+    set_u32(94, 600)
+    set_i32(98, -50)
+    set_i32(102, 0)
+    set_i32(106, 950)
+    set_i32(110, 800)
+    set_u32(114, 8)
+    set_u32(118, 1)
+    set_u32(122, 1)
+    set_u32(126, 1)
+    set_u32(130, 120000)
+    set_u32(134, 2000)
+    set_u32(138, 3200)
+    frame[299] = sum(frame[:299]) & 0xFF
+    return bytes(frame)
+
+
 def test_normalizes_mppsolar_jkbms_status():
     status = normalize_mppsolar_status(
         sample_mppsolar_payload(),
@@ -134,6 +188,26 @@ def test_builds_jkbms_ble_commands_with_sum_crc():
 
     assert cell_info.hex() == "aa5590eb96000000000000000000000000000010"
     assert device_info.hex() == "aa5590eb97000000000000000000000000000011"
+
+
+def test_builds_jkbms_register_write_frame_with_scaled_payload():
+    spec = bms_setting_spec("max_charge_current")
+    payload = build_jkbms_register_frame(0x0C, encode_bms_setting_value(spec, 25.0), spec.length)
+
+    assert payload.hex() == "aa5590eb0c04a861000000000000000000000093"
+
+
+def test_parses_jkbms_settings_frame_24s():
+    settings = parse_jkbms_ble_settings(sample_jkbms_settings_frame_24s(), protocol="JK02", cell_count=8)
+
+    assert settings.supported is True
+    assert settings.values["power_off_voltage"] == 2.7
+    assert settings.values["max_charge_current"] == 25.0
+    assert settings.values["max_discharge_current"] == 150.0
+    assert settings.values["charge_undertemperature_protection"] == -5.0
+    assert settings.values["charging"] is True
+    assert settings.values["voltage_calibration"] is None
+    assert next(setting for setting in settings.settings if setting["key"] == "voltage_calibration")["writable"] is False
 
 
 def test_rejects_jkbms_ble_frame_with_invalid_crc():
@@ -375,6 +449,109 @@ async def test_jkbms_ble_status_reuses_persistent_connection():
     assert len(FakeBleakClient.instances) == 1
     assert client.connects == 1
     assert [command[4] for command in client.writes] == [0x97, 0x96]
+
+
+@pytest.mark.asyncio
+async def test_jkbms_ble_setting_write_requires_read_back_match():
+    class FakeCharacteristic:
+        def __init__(self, properties):
+            self.uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
+            self.properties = properties
+
+    class FakeService:
+        uuid = "0000ffe0-0000-1000-8000-00805f9b34fb"
+        characteristics = [
+            FakeCharacteristic(["write-without-response"]),
+            FakeCharacteristic(["notify"]),
+        ]
+
+    class FakeBleakClient:
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+            self.is_connected = False
+            self.services = [FakeService()]
+            self.notify_callback = None
+            self.max_charge_current = 25.0
+            self.writes = []
+
+        async def connect(self):
+            self.is_connected = True
+
+        async def start_notify(self, characteristic, callback):
+            self.notify_callback = callback
+
+        async def stop_notify(self, characteristic):
+            self.notify_callback = None
+
+        async def write_gatt_char(self, characteristic, data, response=False):
+            self.writes.append(bytes(data))
+            if data[4] == 0x0C:
+                self.max_charge_current = int.from_bytes(data[6:10], "little") / 1000
+            if data[4] == 0x97:
+                frame = sample_jkbms_settings_frame_24s(max_charge_current=self.max_charge_current)
+                self.notify_callback(characteristic, frame[:120])
+                self.notify_callback(characteristic, frame[120:])
+
+        async def disconnect(self):
+            self.is_connected = False
+
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FakeBleakClient, bootstrap_seconds=0)
+    try:
+        result = await bms.apply_setting("max_charge_current", 30.0)
+    finally:
+        await bms.close()
+
+    assert result.old_value == 25.0
+    assert result.new_value == 30.0
+    assert result.verified_value == 30.0
+    assert result.register == 0x0C
+
+
+@pytest.mark.asyncio
+async def test_jkbms_ble_setting_write_fails_on_read_back_mismatch():
+    class FakeCharacteristic:
+        def __init__(self, properties):
+            self.uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
+            self.properties = properties
+
+    class FakeService:
+        uuid = "0000ffe0-0000-1000-8000-00805f9b34fb"
+        characteristics = [
+            FakeCharacteristic(["write-without-response"]),
+            FakeCharacteristic(["notify"]),
+        ]
+
+    class FakeBleakClient:
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+            self.is_connected = False
+            self.services = [FakeService()]
+            self.notify_callback = None
+
+        async def connect(self):
+            self.is_connected = True
+
+        async def start_notify(self, characteristic, callback):
+            self.notify_callback = callback
+
+        async def stop_notify(self, characteristic):
+            self.notify_callback = None
+
+        async def write_gatt_char(self, characteristic, data, response=False):
+            if data[4] == 0x97:
+                self.notify_callback(characteristic, sample_jkbms_settings_frame_24s(max_charge_current=25.0))
+
+        async def disconnect(self):
+            self.is_connected = False
+
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FakeBleakClient, bootstrap_seconds=0)
+
+    with pytest.raises(BmsError, match="read-back mismatch"):
+        await bms.apply_setting("max_charge_current", 30.0)
+
+    await bms.close()
 
 
 @pytest.mark.asyncio
