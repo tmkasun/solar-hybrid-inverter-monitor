@@ -23,6 +23,7 @@ function App() {
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
   const [password, setPassword] = useState("");
   const [authenticated, setAuthenticated] = useState(Boolean(sessionStorage.getItem("sako_csrf")));
+  const [authenticating, setAuthenticating] = useState(false);
   const [message, setMessage] = useState("");
   const [pendingSetting, setPendingSetting] = useState<PendingSetting>(null);
 
@@ -35,7 +36,20 @@ function App() {
   useEffect(() => { localStorage.setItem(languageStorageKey, language); document.documentElement.lang = i18n.locale; }, [language, i18n.locale]);
   useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? i18n.t("message.settingApplied") : i18n.t("message.commandFailed", { error: data.data.error })); }; return () => socket.close(); }, [i18n]);
 
-  const login = async (event: FormEvent) => { event.preventDefault(); try { await api.login(password); setAuthenticated(true); setPassword(""); setMessage(i18n.t("message.signedIn")); } catch (error) { setMessage(error instanceof Error ? error.message : i18n.t("message.loginFailed")); } };
+  const login = async (event: FormEvent) => {
+    event.preventDefault();
+    setAuthenticating(true);
+    try {
+      await api.login(password);
+      setAuthenticated(true);
+      setPassword("");
+      setMessage(i18n.t("message.signedIn"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : i18n.t("message.loginFailed"));
+    } finally {
+      setAuthenticating(false);
+    }
+  };
   const logout = async () => { await api.logout(); setAuthenticated(false); setMessage(i18n.t("message.signedOut")); };
   const currentSettings = useMemo(() => currentPrioritySettings(capabilityDiagnostics), [capabilityDiagnostics]);
   const applySetting = async (key: string, value: string) => {
@@ -81,7 +95,7 @@ function App() {
       <Route path="/overview" element={<Overview status={status} i18n={i18n} />} />
       <Route path="/analysis" element={<DataAnalysis i18n={i18n} />} />
       <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage i18n={i18n} />} />
-      <Route path="/settings" element={<Settings authenticated={authenticated} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} i18n={i18n} />} />
+      <Route path="/settings" element={<Settings authenticated={authenticated} authenticating={authenticating} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} i18n={i18n} />} />
       <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} i18n={i18n} />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
@@ -1288,8 +1302,8 @@ const priorityAliases: Record<string, Record<string, string>> = {
   charger_source_priority: { "0": "utility", "00": "utility", utility: "utility", "1": "solar_first", "01": "solar_first", solar_first: "solar_first", "2": "solar_utility", "02": "solar_utility", solar_utility: "solar_utility", "3": "solar", "03": "solar", solar: "solar" },
 };
 
-function Settings({ authenticated, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, i18n }: { authenticated: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void> } & I18nProps) {
-  if (!authenticated) return <section className="panel login"><h2>{i18n.t("settings.adminSignIn")}</h2><p>{i18n.t("settings.signInRequired")}</p><form onSubmit={login}><input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder={i18n.t("settings.password")}/><button>{i18n.t("settings.signIn")}</button></form></section>;
+function Settings({ authenticated, authenticating, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, i18n }: { authenticated: boolean; authenticating: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void> } & I18nProps) {
+  if (!authenticated) return <section className="panel login"><h2>{i18n.t("settings.adminSignIn")}</h2><p>{i18n.t("settings.signInRequired")}</p><form onSubmit={login} aria-busy={authenticating}><input type="password" required value={password} disabled={authenticating} onChange={e => setPassword(e.target.value)} placeholder={i18n.t("settings.password")}/><button disabled={authenticating}>{authenticating && <i className="spinner" aria-hidden="true" />}{authenticating ? i18n.t("settings.authenticating") : i18n.t("settings.signIn")}</button></form></section>;
   const resetDisabled = Boolean(pendingSetting) || capabilities.length === 0;
   return <section className="settings-page">
     <div className="section-title"><div><h2>{i18n.t("settings.title")}</h2><p>{i18n.t("settings.subtitle")}</p></div><div className="settings-actions"><button className="quiet danger" disabled={resetDisabled} onClick={() => void onResetDefaults()}>{pendingSetting ? i18n.t("settings.applying") : i18n.t("settings.resetDefaults")}</button><button className="quiet" onClick={() => void logout()}>{i18n.t("settings.signOut")}</button></div></div>

@@ -250,6 +250,19 @@ small {
     color: inherit;
 }
 
+.login button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.login button:disabled,
+.login input:disabled {
+    cursor: progress;
+    opacity: .72;
+}
+
 pre {
     margin-top: 16px;
     padding: 12px;
