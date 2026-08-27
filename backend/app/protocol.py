@@ -22,20 +22,27 @@ def frame(command: str) -> bytes:
     return payload + crc + b"\r"
 
 
-def response_payload(reply: bytes, *, allow_unchecksummed_rating: bool = False) -> str:
+def response_payload(
+    reply: bytes,
+    *,
+    allow_unchecksummed_rating: bool = False,
+    allow_unverified_status: bool = False,
+) -> str:
     if len(reply) < 4 or not reply.endswith(b"\r"):
         raise ValueError("truncated inverter response")
     data, received_crc = reply[:-3], reply[-3:-1]
     expected = crc16_xmodem(data).to_bytes(2, "big")
     expected = bytes(byte + 1 if byte in (0x28, 0x0D, 0x0A) else byte for byte in expected)
     if received_crc != expected:
-        # Some PIP-compatible firmware omits the CRC only from QPIRI.  Accept
-        # that read-only rating response only when it has the expected
-        # parenthesized, multi-field structure; all other replies stay strict.
+        # Some PIP-compatible firmware either omits CRC bytes from QPIRI or
+        # returns a structured QPIGS status with non-standard CRC bytes.
+        # Accept only those read-only responses when their shape is known.
         unchecksummed = reply[:-1]
         fields = unchecksummed.lstrip(b"(").split()
         if allow_unchecksummed_rating and unchecksummed.startswith(b"(") and len(fields) >= 18:
             return unchecksummed.decode("ascii", errors="replace").lstrip("(")
+        if allow_unverified_status and _looks_like_status_response(data):
+            return data.decode("ascii", errors="replace").lstrip("(")
         raise ValueError("inverter response checksum mismatch")
     return data.decode("ascii", errors="replace").lstrip("(")
 
@@ -79,6 +86,31 @@ def _temperature(fields: list[str], index: int) -> float | int | None:
         return None
 
 
+def _status_bits(value: str | None) -> bool:
+    return bool(value) and len(value) == len(STATUS_BIT_DEFINITIONS) and not (set(value) - {"0", "1"})
+
+
+def _looks_like_status_response(payload: bytes) -> bool:
+    if not payload.startswith(b"("):
+        return False
+    try:
+        fields = payload.decode("ascii").lstrip("(").split()
+    except UnicodeDecodeError:
+        return False
+    if len(fields) < 15:
+        return False
+    if not (_status_bits(fields[16] if len(fields) > 16 else None) or _status_bits(fields[14])):
+        return False
+    numeric_indexes = (0, 1, 2, 3, 4, 5, 6, 8)
+    try:
+        for index in numeric_indexes:
+            if index < len(fields):
+                float(fields[index])
+    except ValueError:
+        return False
+    return True
+
+
 STATUS_BIT_DEFINITIONS = (
     ("sbu_priority_version_added", "SBU-priority capability", "This firmware supports the SBU-priority feature."),
     ("configuration_changed", "Configuration changed", "The inverter reports that its configuration has changed."),
@@ -107,6 +139,25 @@ def decode_status_bits(bits: str | None) -> list[dict[str, Any]]:
 
 def parse_qpigs(payload: str) -> LiveStatus:
     fields = payload.split()
+    if _looks_like_compact_sako_qpigs(fields):
+        status_bits = fields[14]
+        return LiveStatus(
+            grid_voltage=_number(fields, 0, float),
+            grid_frequency=_number(fields, 1, float),
+            output_voltage=_number(fields, 2, float),
+            output_apparent_power_va=_number(fields, 3, int),
+            output_active_power_w=_number(fields, 4, int),
+            bus_voltage=_number(fields, 5, int),
+            battery_voltage=_number(fields, 6, float),
+            battery_charge_current=_number(fields, 7, int),
+            battery_capacity_percent=_number(fields, 8, int),
+            inverter_temperature_c=_temperature(fields, 9),
+            pv_input_current=_number(fields, 10, float),
+            pv_input_voltage=_number(fields, 11, float),
+            battery_discharge_current=_number(fields, 13, int),
+            status_bits=status_bits,
+            status_flags=decode_status_bits(status_bits),
+        )
     status_bits = fields[16] if len(fields) > 16 else None
     return LiveStatus(
         grid_voltage=_number(fields, 0, float), grid_frequency=_number(fields, 1, float),
@@ -119,6 +170,22 @@ def parse_qpigs(payload: str) -> LiveStatus:
         battery_discharge_current=_number(fields, 15, int), status_bits=status_bits,
         status_flags=decode_status_bits(status_bits),
     )
+
+
+def _looks_like_compact_sako_qpigs(fields: list[str]) -> bool:
+    """Recognize Sako/PIP variants that omit output frequency and load percent."""
+    if len(fields) < 15 or not _status_bits(fields[14]):
+        return False
+    if _status_bits(fields[16] if len(fields) > 16 else None):
+        return False
+    try:
+        grid_frequency = float(fields[1])
+        bus_voltage = int(fields[5])
+        battery_voltage = float(fields[6])
+        soc = int(fields[8])
+    except (ValueError, IndexError):
+        return False
+    return 40 <= grid_frequency <= 70 and 100 <= bus_voltage <= 600 and 1 <= battery_voltage <= 100 and 0 <= soc <= 100
 
 
 def status_dict(payload: str) -> dict[str, Any]:

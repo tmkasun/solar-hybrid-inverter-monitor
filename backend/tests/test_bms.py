@@ -452,6 +452,59 @@ async def test_jkbms_ble_status_reuses_persistent_connection():
 
 
 @pytest.mark.asyncio
+async def test_jkbms_ble_settings_connects_without_status_bootstrap():
+    class FakeCharacteristic:
+        def __init__(self, properties):
+            self.uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
+            self.properties = properties
+
+    class FakeService:
+        uuid = "0000ffe0-0000-1000-8000-00805f9b34fb"
+        characteristics = [
+            FakeCharacteristic(["write-without-response"]),
+            FakeCharacteristic(["notify"]),
+        ]
+
+    class FakeBleakClient:
+        instances = []
+
+        def __init__(self, address, disconnected_callback=None):
+            self.address = address
+            self.disconnected_callback = disconnected_callback
+            self.is_connected = False
+            self.services = [FakeService()]
+            self.notify_callback = None
+            self.writes = []
+            FakeBleakClient.instances.append(self)
+
+        async def connect(self):
+            self.is_connected = True
+
+        async def start_notify(self, characteristic, callback):
+            self.notify_callback = callback
+
+        async def stop_notify(self, characteristic):
+            self.notify_callback = None
+
+        async def write_gatt_char(self, characteristic, data, response=False):
+            self.writes.append(bytes(data))
+            if data[4] == 0x97:
+                self.notify_callback(characteristic, sample_jkbms_settings_frame_24s())
+
+        async def disconnect(self):
+            self.is_connected = False
+
+    bms = JkbmsBleBms("AA:BB:CC:DD:EE:FF", "JK-BMS", "JK02", 8, 3, FakeBleakClient, bootstrap_seconds=0)
+    try:
+        settings = await bms.settings()
+    finally:
+        await bms.close()
+
+    assert settings.values["max_charge_current"] == 25.0
+    assert [command[4] for command in FakeBleakClient.instances[0].writes] == [0x97]
+
+
+@pytest.mark.asyncio
 async def test_jkbms_ble_setting_write_requires_read_back_match():
     class FakeCharacteristic:
         def __init__(self, properties):

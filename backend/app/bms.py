@@ -312,7 +312,7 @@ class JkbmsBleBms(BaseBms):
                     bool(self.latest_status),
                     self._client_is_connected(),
                 )
-                await self._ensure_connected()
+                await self._ensure_connected(bootstrap_status=True)
                 now = time.monotonic()
                 if self.latest_status and now - self.latest_status_monotonic <= self.timeout_seconds:
                     logger.debug(
@@ -345,7 +345,7 @@ class JkbmsBleBms(BaseBms):
             raise BmsUnsupportedError("BMS_BLUETOOTH_ADDRESS is required for BMS_MODE=jkbms")
         try:
             async with self._lock:
-                await self._ensure_connected()
+                await self._ensure_connected(bootstrap_status=False)
                 starting_version = self.settings_version
                 await self._request_settings_info()
             await asyncio.wait_for(self._wait_for_new_settings(starting_version), timeout=self.timeout_seconds)
@@ -376,7 +376,7 @@ class JkbmsBleBms(BaseBms):
         old_value = before.values.get(key)
         try:
             async with self._lock:
-                await self._ensure_connected()
+                await self._ensure_connected(bootstrap_status=False)
                 logger.info("Writing JK-BMS setting %s=%s register=0x%02x", key, normalized, register)
                 await self._write_payload(payload, "setting", register)
         except BmsError:
@@ -395,6 +395,8 @@ class JkbmsBleBms(BaseBms):
             if self.disconnect_error:
                 raise BmsError(self.disconnect_error)
             self._status_event.clear()
+            if self.status_version > starting_version:
+                return
             if self.disconnect_error:
                 raise BmsError(self.disconnect_error)
             await self._status_event.wait()
@@ -406,13 +408,15 @@ class JkbmsBleBms(BaseBms):
             if self.disconnect_error:
                 raise BmsError(self.disconnect_error)
             self._settings_event.clear()
+            if self.settings_version > starting_version:
+                return
             if self.disconnect_error:
                 raise BmsError(self.disconnect_error)
             await self._settings_event.wait()
         if self.disconnect_error and self.settings_version <= starting_version:
             raise BmsError(self.disconnect_error)
 
-    async def _ensure_connected(self) -> None:
+    async def _ensure_connected(self, *, bootstrap_status: bool) -> None:
         if self._client_is_connected():
             return
         await self._disconnect()
@@ -430,12 +434,15 @@ class JkbmsBleBms(BaseBms):
             logger.debug("JK-BMS BLE connect completed in %.2fs", time.monotonic() - started_at)
             self.write_char, self.notify_char = await self._characteristics(client)
             await client.start_notify(self.notify_char, self._notification)
-            logger.info("JK-BMS BLE connected; requesting device and cell info")
-            await self._write_command(JK_BMS_DEVICE_INFO_COMMAND)
-            if self.bootstrap_seconds:
-                logger.debug("Waiting %.1fs after JK-BMS device-info request before cell-info request", self.bootstrap_seconds)
-                await asyncio.sleep(self.bootstrap_seconds)
-            await self._write_command(JK_BMS_CELL_INFO_COMMAND)
+            if bootstrap_status:
+                logger.info("JK-BMS BLE connected; requesting device and cell info")
+                await self._write_command(JK_BMS_DEVICE_INFO_COMMAND)
+                if self.bootstrap_seconds:
+                    logger.debug("Waiting %.1fs after JK-BMS device-info request before cell-info request", self.bootstrap_seconds)
+                    await asyncio.sleep(self.bootstrap_seconds)
+                await self._write_command(JK_BMS_CELL_INFO_COMMAND)
+            else:
+                logger.info("JK-BMS BLE connected")
         except BmsError:
             await self._disconnect()
             raise

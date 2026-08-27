@@ -173,12 +173,17 @@ class UsbHidInverter(BaseInverter):
             reply = b"".join(chunks).split(b"\r", 1)[0] + b"\r"
             try:
                 try:
-                    result = response_payload(reply)
+                    result = response_payload(reply, allow_unverified_status=command == "QPIGS")
                 except ValueError:
                     if command != "QPIRI":
                         raise
                     result = response_payload(reply, allow_unchecksummed_rating=True)
                     logger.warning("Accepted checksumless QPIRI rating response from inverter firmware")
+                if command == "QPIGS":
+                    try:
+                        response_payload(reply)
+                    except ValueError:
+                        logger.warning("Accepted structured QPIGS status response with invalid inverter checksum")
                 logger.debug("USB command %s completed: reports=%d response=%r", command, len(chunks), result)
                 return result
             except ValueError as exc:
