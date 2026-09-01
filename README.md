@@ -153,9 +153,9 @@ Route `sako.knnect.com` to the Pi's static LAN address using the router/Pi-hole 
 
 Run `./scripts/pi-preflight` on the Pi to validate Docker, USB bus availability, and the inverter USB ID. Ubuntu 20.04 is out of standard support and should be upgraded after commissioning.
 
-## Split deployment: Pi API and remote UI
+## Split deployment: Pi API and LAN Traefik UI
 
-To minimise Raspberry Pi resource use, run only the Python API directly on the Pi and serve the compiled UI from `solar.knnect.lk`. Cloudflare Tunnel terminates public HTTPS and forwards plain HTTP to Traefik, which routes to the UI container. The web server must reach the Pi over a private LAN or VPN address; do not expose the Pi's port 8000 to the public internet. The reverse proxy keeps browser requests same-origin, so authentication cookies and WebSockets continue to work without CORS changes.
+To minimise Raspberry Pi resource use, run only the Python API directly on the Pi and serve the compiled UI behind Traefik on the local network. Traefik terminates HTTPS on the LAN and forwards plain HTTP to the UI container. The web server must reach the Pi over a private LAN or VPN address; do not expose the Pi's port 8000 to the public internet. The reverse proxy keeps browser requests same-origin, so authentication cookies and WebSockets continue to work without CORS changes.
 
 On the Pi, install the API service (this installs Python packages in `backend/.venv`, configures USB access, and starts systemd):
 
@@ -172,7 +172,7 @@ sudo journalctl -u sako-inverter-api -f
 sudo tail -f /var/solar.log
 ```
 
-Set a bcrypt `ADMIN_PASSWORD_HASH` in `/etc/sako-inverter/api.env`. Its database is stored at `/var/lib/sako-inverter/sako.db`. API logs are also written to `/var/solar.log`, with logrotate keeping 5 compressed 5 MB backups. Permit TCP port 8000 only from the private IP of the `solar.knnect.lk` server, for example with UFW:
+Set a bcrypt `ADMIN_PASSWORD_HASH` in `/etc/sako-inverter/api.env`. Its database is stored at `/var/lib/sako-inverter/sako.db`. API logs are also written to `/var/solar.log`, with logrotate keeping 5 compressed 5 MB backups. Permit TCP port 8000 only from the private IP of the Traefik/frontend server, for example with UFW:
 
 ```sh
 sudo ufw allow from HOME_SERVER_PRIVATE_IP to any port 8000 proto tcp
@@ -182,14 +182,14 @@ The frontend can run as a lightweight Docker container behind the existing `slho
 
 ```sh
 cd /opt/sako-inverter
-printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\n' > .env.ui
+printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\nSOLAR_UI_HOST=solar.knnect.lk\n' > .env.ui
 docker network create proxy 2>/dev/null || true
 docker compose --env-file .env.ui -f compose.ui.yaml up -d --build
 ```
 
-`PI_API_UPSTREAM` is used only inside the frontend container and should be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. Do not set it to the public frontend hostname; Cloudflare Tunnel should route `solar.knnect.lk` to Traefik over HTTP, and Traefik should route the request to the frontend container on the external Docker network named `proxy`. The frontend container should proxy only to the private Pi API address and should not publish a host port.
+`PI_API_UPSTREAM` is used only inside the frontend container and should be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. Do not set it to the frontend hostname. `SOLAR_UI_HOST` is the local DNS name Traefik should route, such as `solar.knnect.lk`; create a router/Pi-hole DNS override so that name resolves to the Traefik server's private LAN address. Traefik should route the request to the frontend container on the external Docker network named `proxy`. The frontend container should proxy only to the private Pi API address and should not publish a host port.
 
-Configure the Cloudflare Tunnel public hostname `solar.knnect.lk` to forward to Traefik's HTTP entrypoint, for example `http://slhome_traefik:80` when the tunnel container can resolve the Traefik container name. Ensure Cloudflare Tunnel can reach Traefik, and Traefik can reach the `solar-ui-web-1` container over the `proxy` network.
+Traefik must have `web` and `websecure` entrypoints and a certificate available for `SOLAR_UI_HOST`. For a browser-trusted certificate on a LAN-only service, use a hostname covered by an existing Traefik certificate or configure Traefik with a local/internal CA certificate. This compose file enables TLS on the `websecure` router and redirects plain HTTP requests on `web` to HTTPS.
 
 If `/api/*` returns `502 Bad Gateway` from the UI but direct API requests work elsewhere, check from inside the frontend container:
 
@@ -197,10 +197,10 @@ If `/api/*` returns `502 Bad Gateway` from the UI but direct API requests work e
 ./scripts/check-ui-proxy
 ```
 
-The `direct upstream health` step must return `{"ok":true,...}`. If it fails, set `PI_API_UPSTREAM` in `.env.ui` to an address reachable from the `solar.knnect.lk` server/container, then recreate the UI container:
+The `direct upstream health` step must return `{"ok":true,...}`. If it fails, set `PI_API_UPSTREAM` in `.env.ui` to an address reachable from the Traefik/frontend server/container, then recreate the UI container:
 
 ```sh
-printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\n' > .env.ui
+printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\nSOLAR_UI_HOST=solar.knnect.lk\n' > .env.ui
 docker compose --env-file .env.ui -f compose.ui.yaml up -d --force-recreate
 ```
 
