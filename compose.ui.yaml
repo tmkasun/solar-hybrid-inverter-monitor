@@ -13,6 +13,7 @@ services:
       - traefik.http.routers.solar-ui.rule=Host(`${SOLAR_UI_HOST:-solar.knnect.lk}`)
       - traefik.http.routers.solar-ui.entrypoints=websecure
       - traefik.http.routers.solar-ui.tls=true
+      - traefik.http.routers.solar-ui.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-cloudflare}
       - traefik.http.routers.solar-ui.service=solar-ui
       - traefik.http.routers.solar-ui-http.rule=Host(`${SOLAR_UI_HOST:-solar.knnect.lk}`)
       - traefik.http.routers.solar-ui-http.entrypoints=web
