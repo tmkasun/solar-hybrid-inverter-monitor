@@ -182,14 +182,24 @@ The frontend can run as a lightweight Docker container behind the existing `slho
 
 ```sh
 cd /opt/sako-inverter
-printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\nSOLAR_UI_HOST=solar.knnect.lk\n' > .env.ui
+printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\nSOLAR_UI_HOST=solar.knnect.lk\nTRAEFIK_NETWORK=proxy\n' > .env.ui
 docker network create proxy 2>/dev/null || true
 docker compose --env-file .env.ui -f compose.ui.yaml up -d --build
 ```
 
-`PI_API_UPSTREAM` is used only inside the frontend container and should be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. Do not set it to the frontend hostname. `SOLAR_UI_HOST` is the local DNS name Traefik should route, such as `solar.knnect.lk`; create a router/Pi-hole DNS override so that name resolves to the Traefik server's private LAN address. Traefik should route the request to the frontend container on the external Docker network named `proxy`. The frontend container should proxy only to the private Pi API address and should not publish a host port.
+`PI_API_UPSTREAM` is used only inside the frontend container and should be the Pi's private LAN/VPN address, such as `192.168.1.50:8000`. Do not set it to the frontend hostname. `SOLAR_UI_HOST` is the local DNS name Traefik should route, such as `solar.knnect.lk`; create a router/Pi-hole DNS override so that name resolves to the Traefik server's private LAN address. `TRAEFIK_NETWORK` must be the real Docker network name shared with Traefik. The frontend container should proxy only to the private Pi API address and should not publish a host port.
 
 Traefik must have `web` and `websecure` entrypoints and a certificate available for `SOLAR_UI_HOST`. For a browser-trusted certificate on a LAN-only service, use a hostname covered by an existing Traefik certificate or configure Traefik with a local/internal CA certificate. This compose file enables TLS on the `websecure` router and redirects plain HTTP requests on `web` to HTTPS.
+
+In Portainer, paste `compose.ui.yaml` as the stack file and set these stack environment variables:
+
+```env
+PI_API_UPSTREAM=192.168.1.50:8000
+SOLAR_UI_HOST=solar.knnect.lk
+TRAEFIK_NETWORK=proxy
+```
+
+Set `TRAEFIK_NETWORK` to the exact Docker network name shown on the Traefik container. The network must already exist and Traefik must be attached to it.
 
 If `/api/*` returns `502 Bad Gateway` from the UI but direct API requests work elsewhere, check from inside the frontend container:
 
@@ -200,7 +210,7 @@ If `/api/*` returns `502 Bad Gateway` from the UI but direct API requests work e
 The `direct upstream health` step must return `{"ok":true,...}`. If it fails, set `PI_API_UPSTREAM` in `.env.ui` to an address reachable from the Traefik/frontend server/container, then recreate the UI container:
 
 ```sh
-printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\nSOLAR_UI_HOST=solar.knnect.lk\n' > .env.ui
+printf 'PI_API_UPSTREAM=PI_PRIVATE_IP:8000\nSOLAR_UI_HOST=solar.knnect.lk\nTRAEFIK_NETWORK=proxy\n' > .env.ui
 docker compose --env-file .env.ui -f compose.ui.yaml up -d --force-recreate
 ```
 

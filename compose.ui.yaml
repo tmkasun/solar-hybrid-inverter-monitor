@@ -9,7 +9,7 @@ services:
       API_UPSTREAM: ${PI_API_UPSTREAM:?Set PI_API_UPSTREAM in .env.ui, for example 192.168.1.50:8000}
     labels:
       - traefik.enable=true
-      - traefik.docker.network=proxy
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
       - traefik.http.routers.solar-ui.rule=Host(`${SOLAR_UI_HOST:-solar.knnect.lk}`)
       - traefik.http.routers.solar-ui.entrypoints=websecure
       - traefik.http.routers.solar-ui.tls=true
@@ -31,3 +31,4 @@ services:
 networks:
   proxy:
     external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
