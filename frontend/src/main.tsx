@@ -4,6 +4,9 @@ import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, use
 import { Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import * as THREE from "three";
 import { api } from "./api";
+import { alarmLabel, alarmSummary, InverterAlerts } from "./InverterAlerts";
+import { AlarmHistory } from "./AlarmHistory";
+import { startStatusStream } from "./statusStream";
 import type { HistoryRequest } from "./api";
 import { createI18n, groupLabel, languageOptions, languageStorageKey, metricLabel, normalizeLanguage, settingChoiceLabel, settingDetailLabel, settingResetLabel, settingTitleLabel, settingWarningLabel, statusFlagDescription, statusFlagLabel, storedLanguage } from "./i18n";
 import type { I18n, Language, TranslationKey } from "./i18n";
@@ -18,7 +21,9 @@ function App() {
   const graphFullPage = routeLocation.pathname === "/analysis/fullscreen";
   const [language, setLanguage] = useState<Language>(() => storedLanguage());
   const i18n = useMemo(() => createI18n(language), [language]);
-  const [status, setStatus] = useState<Status | null>(null);
+  const [receivedStatus, setStatus] = useState<Status | null>(null);
+  const [streamStale, setStreamStale] = useState(true);
+  const status = receivedStatus && streamStale ? { ...receivedStatus, connected: false } : receivedStatus;
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
   const [password, setPassword] = useState("");
@@ -29,12 +34,25 @@ function App() {
 
   const load = async () => {
     try {
-      const [nextStatus, nextCapabilities] = await Promise.all([api.status(), api.capabilities()]);
-      setStatus(nextStatus); setCapabilities(nextCapabilities.capabilities); setCapabilityDiagnostics(nextCapabilities.diagnostics || {});
+      const nextCapabilities = await api.capabilities();
+      setCapabilities(nextCapabilities.capabilities); setCapabilityDiagnostics(nextCapabilities.diagnostics || {});
     } catch (error) { setMessage(error instanceof Error ? error.message : i18n.t("message.unableToReachApi")); }
   };
   useEffect(() => { localStorage.setItem(languageStorageKey, language); document.documentElement.lang = i18n.locale; }, [language, i18n.locale]);
-  useEffect(() => { void load(); const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "telemetry" || data.type === "connection") setStatus(data.data); if (data.type === "command_result") setMessage(data.data.ok ? i18n.t("message.settingApplied") : i18n.t("message.commandFailed", { error: data.data.error })); if (data.type === "bms_command_result") setMessage(data.data.ok ? i18n.t("bmsSettings.updated", { setting: bmsSettingTitle(data.data.key), value: String(data.data.value) }) : i18n.t("message.commandFailed", { error: data.data.error })); }; return () => socket.close(); }, [i18n]);
+  useEffect(() => {
+    void load();
+    setStreamStale(true);
+    return startStatusStream({
+      url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`,
+      fetchStatus: api.status,
+      onStatus: next => { setStatus(next); setStreamStale(false); },
+      onStale: () => setStreamStale(true),
+      onMessage: message => {
+        if (message.type === "command_result") setMessage(message.data.ok ? i18n.t("message.settingApplied") : i18n.t("message.commandFailed", { error: message.data.error }));
+        if (message.type === "bms_command_result") setMessage(message.data.ok ? i18n.t("bmsSettings.updated", { setting: bmsSettingTitle(message.data.key), value: String(message.data.value) }) : i18n.t("message.commandFailed", { error: message.data.error }));
+      },
+    });
+  }, [i18n]);
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
@@ -90,9 +108,11 @@ function App() {
     {!graphFullPage && <header><div><h1>Sako Energy</h1><p>{i18n.t("app.tagline")}</p></div><div className="header-actions"><label className="language-select"><span>{i18n.t("language.label")}</span><select value={language} onChange={event => setLanguage(normalizeLanguage(event.target.value))}>{languageOptions.map(option => <option key={option.value} value={option.value}>{option.nativeLabel}</option>)}</select></label><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? i18n.t("connection.connected") : i18n.t("connection.offline")}</div></div></header>}
     {!graphFullPage && <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{i18n.t(route.labelKey)}</NavLink>)}</nav>}
     {message && <div className="notice">{message}<button onClick={() => setMessage("")}>×</button></div>}
+    <InverterAlerts status={status} i18n={i18n} />
     <Routes>
       <Route path="/" element={<Navigate to="/overview" replace />} />
       <Route path="/overview" element={<Overview status={status} i18n={i18n} />} />
+      <Route path="/alarms" element={<AlarmHistory status={status} i18n={i18n} />} />
       <Route path="/analysis" element={<DataAnalysis i18n={i18n} />} />
       <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage i18n={i18n} />} />
       <Route path="/settings" element={<Settings authenticated={authenticated} authenticating={authenticating} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} onMessage={setMessage} i18n={i18n} />} />
@@ -104,6 +124,7 @@ function App() {
 
 const appRoutes = [
   { path: "/overview", labelKey: "route.overview" },
+  { path: "/alarms", labelKey: "route.alarms" },
   { path: "/analysis", labelKey: "route.analysis" },
   { path: "/settings", labelKey: "route.settings" },
   { path: "/diagnostics", labelKey: "route.diagnostics" },
@@ -1579,11 +1600,12 @@ function Diagnostics({ authenticated, i18n }: { authenticated: boolean } & I18nP
     {error && <p className="error">{error}</p>}
     {data && <>
       <div className="diagnostics-summary">
-        <DiagnosticsSummaryCard label={i18n.t("diagnostics.connection")} value={latest?.connected ? i18n.t("status.connected") : i18n.t("status.offline")} tone={latest?.connected ? "ok" : "warn"} detail={latest?.error || latest?.warnings || i18n.t("diagnostics.liveTelemetry")} />
+        <DiagnosticsSummaryCard label={i18n.t("diagnostics.connection")} value={latest?.connected ? i18n.t("status.connected") : i18n.t("status.offline")} tone={latest?.connected ? "ok" : "warn"} detail={latest?.error || i18n.t("diagnostics.liveTelemetry")} />
+        <DiagnosticsSummaryCard label={i18n.t("alarms.title")} value={alarmSummary(latest, i18n)} tone={latest?.connected && latest.alarms?.available && latest.alarms.severity === "ok" ? "ok" : "warn"} detail={latest?.alarms?.active.map(alarm => alarmLabel(alarm, i18n)).join(", ") || latest?.alarms?.error || "—"} />
         <DiagnosticsSummaryCard label="JK-BMS" value={bmsLabel(bms, i18n)} tone={bms?.enabled ? bms.connected ? "ok" : "warn" : "neutral"} detail={bmsDetail(bms, i18n)} />
         <DiagnosticsSummaryCard label={i18n.t("diagnostics.mode")} value={formatInverterMode(latest?.mode, i18n)} detail={formatDate(latest?.captured_at, i18n)} />
         <DiagnosticsSummaryCard label={i18n.t("diagnostics.protocol")} value={protocolOk ? i18n.t("diagnostics.pipCompatible") : i18n.t("diagnostics.needsAttention")} tone={protocolOk ? "ok" : "warn"} detail={protocol || protocolError || i18n.t("diagnostics.noProtocolReply")} />
-        <DiagnosticsSummaryCard label={i18n.t("diagnostics.activeFlags")} value={String(activeFlags.length)} tone={activeFlags.length ? "warn" : "ok"} detail={activeFlags.length ? activeFlags.map(flag => statusFlagLabel(i18n, flag.key, flag.label)).join(", ") : i18n.t("diagnostics.noActiveFlags")} />
+        <DiagnosticsSummaryCard label={i18n.t("diagnostics.activeFlags")} value={String(activeFlags.length)} tone="neutral" detail={activeFlags.length ? activeFlags.map(flag => statusFlagLabel(i18n, flag.key, flag.label)).join(", ") : i18n.t("diagnostics.noActiveFlags")} />
       </div>
       <div className="diagnostics-grid">
         <DiagnosticsPanel title={i18n.t("diagnostics.identity")} rows={[

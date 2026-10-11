@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import logging
 import secrets
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from logging.handlers import WatchedFileHandler
@@ -11,15 +12,17 @@ from pathlib import Path
 from typing import Any
 
 import bcrypt
-from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .bms import BmsError, BmsStatus, BmsUnsupportedError, BmsValidationError, apply_bms_to_status, bms_from_settings
+from .alarms import retain_confirmed_alarms
 from .capabilities import command_for, confirmation_for, public_capabilities
 from .config import settings
 from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInverter
-from .protocol import parse_rating, status_dict
+from .monitoring import read_snapshot
+from .protocol import parse_rating
 from .storage import Storage
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -65,12 +68,17 @@ class BmsSettingChangeRequest(BaseModel):
 
 class State:
     def __init__(self):
-        self.inverter: BaseInverter = SimulatorInverter() if settings.mode == "simulator" else UsbHidInverter(settings.vendor_id, settings.product_id)
+        self.inverter: BaseInverter = SimulatorInverter(settings.simulator_alarm) if settings.mode == "simulator" else UsbHidInverter(settings.vendor_id, settings.product_id)
         self.bms = bms_from_settings(settings)
         self.storage = Storage(settings.database_path)
         self.sessions: dict[str, str] = {}
         self.latest_bms: BmsStatus = self.initial_bms_status()
         self.latest_inverter: dict[str, Any] = {"connected": False, "mode": None, "status": {}, "warnings": None, "captured_at": None, "error": "Awaiting first poll"}
+        try:
+            previous_event = self.storage.latest_alarm_event()
+            self.latest_inverter = retain_confirmed_alarms(self.latest_inverter, (previous_event or {}).get("alarms"))
+        except (sqlite3.Error, ValueError):
+            logger.exception("Unable to restore previous inverter alarms")
         self.latest: dict[str, Any] = self.merge_latest()
         self.diagnostics: dict[str, Any] = {}
         self.sockets: set[WebSocket] = set()
@@ -102,7 +110,11 @@ class State:
 
     async def update_latest(self, inverter_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
         if inverter_snapshot is not None:
-            self.latest_inverter = inverter_snapshot
+            self.latest_inverter = retain_confirmed_alarms(inverter_snapshot, self.latest_inverter.get("alarms"))
+            try:
+                self.storage.record_alarm_snapshot(self.latest_inverter, self.diagnostics.get("QPI"))
+            except (sqlite3.Error, ValueError):
+                logger.exception("Unable to persist inverter alarm event; live monitoring continues")
         self.latest = self.merge_latest()
         return self.latest
 
@@ -123,25 +135,9 @@ class State:
             await self.broadcast({"type": "connection", "data": latest})
             return
         try:
-            qpigs = await self.inverter.command("QPIGS")
-            mode = await self.inverter.command("QMOD")
-            warnings = await self.inverter.command("QPIWS")
-            replies = {"QPIGS": qpigs, "QMOD": mode, "QPIWS": warnings}
-            rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
-            if rejected:
-                raise InverterError(f"inverter rejected monitoring command(s): {rejected}")
-            status = status_dict(qpigs)
-            if all(value is None for value in status.values()):
-                raise InverterError(f"unexpected QPIGS response: {qpigs!r}")
-            captured = datetime.now(timezone.utc).isoformat()
-            latest = await self.update_latest({
-                "connected": True,
-                "mode": mode,
-                "status": status,
-                "warnings": warnings,
-                "captured_at": captured,
-                "error": None,
-            })
+            snapshot = await read_snapshot(self.inverter, self.diagnostics["QPI"])
+            latest = await self.update_latest(snapshot)
+            captured = snapshot["captured_at"]
             captured_at = datetime.fromisoformat(captured)
             if self.should_store_sample(captured_at):
                 self.storage.add_sample(latest["status"], captured)
@@ -369,6 +365,28 @@ async def history(hours: int | None = None, start: datetime | None = None, end: 
 @app.get("/api/audit")
 async def audit(_: str = Depends(session_auth)) -> dict[str, Any]:
     return {"entries": state.storage.audit_rows()}
+
+
+@app.get("/api/alarms/history")
+async def alarm_history(
+    hours: int | None = None, start: datetime | None = None, end: datetime | None = None,
+    limit: int = Query(default=50, ge=1, le=200), before_id: int | None = Query(default=None, ge=1),
+) -> dict[str, Any]:
+    if start is not None or end is not None:
+        if start is None or end is None:
+            raise HTTPException(422, "start and end must be provided together")
+        start_utc, end_utc = utc_datetime(start), utc_datetime(end)
+        if start_utc > end_utc:
+            raise HTTPException(422, "start must be before end")
+        if end_utc - start_utc > HISTORY_MAX_RANGE:
+            raise HTTPException(422, "date range must be 720 hours or less")
+    else:
+        hours = 24 if hours is None else hours
+        if not 1 <= hours <= 720:
+            raise HTTPException(422, "hours must be between 1 and 720")
+        end_utc = datetime.now(timezone.utc)
+        start_utc = end_utc - timedelta(hours=hours)
+    return state.storage.alarm_history(start_utc.isoformat(), end_utc.isoformat(), limit, before_id)
 
 
 @app.get("/api/bms/settings")

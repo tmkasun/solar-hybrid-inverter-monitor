@@ -207,7 +207,10 @@ class UsbHidInverter(BaseInverter):
 
 class SimulatorInverter(BaseInverter):
     """PIP-shaped fixture responses for laptop/API/browser testing without live hardware."""
-    def __init__(self):
+    def __init__(self, alarm: str = "none"):
+        if alarm not in ("none", "low_battery", "overload", "fault", "unknown", "captured_line", "captured_battery"):
+            raise ValueError(f"unknown simulator alarm scenario: {alarm}")
+        self.alarm = alarm
         self.lock = asyncio.Lock()
         self.output_priority = "01"
         self.charger_priority = "01"
@@ -226,13 +229,21 @@ class SimulatorInverter(BaseInverter):
             if command.startswith("PCP"):
                 self.charger_priority = command[-2:]
                 return "ACK"
+            bits = ["0"] * 32
+            for position in {"none": (), "low_battery": (12,), "overload": (16,), "fault": (1, 9), "unknown": (30,),
+                             "captured_line": (7,), "captured_battery": (5, 7, 12)}[self.alarm]:
+                bits[position] = "1"
             replies = {
                 "QPI": "PI30", "QID": "SAKO-SIM-0001", "QVFW": "VERFW:00001.00",
-                "QVFW2": "VERFW2:00001.00", "QMOD": "L",
+                "QVFW2": "VERFW2:00001.00", "QMOD": "F" if self.alarm == "fault" else "B" if self.alarm == "captured_battery" else "L",
                 "QPIGS": "230.0 50.0 230.0 50.0 0550 0440 22 390 51.20 012 86 31 4.2 116.0 51.10 000 01000000",
                 "QPIRI": f"230.0 30.0 230.0 50.0 13.0 3000 2400 48.0 54.0 42.0 56.4 54.0 AGM 30 60 UPS {self.output_priority} {self.charger_priority}",
-                "QFLAG": "Eabjkuvxyz", "QPIWS": "00000000000000000000000000000000",
+                "QFLAG": "Eabjkuvxyz", "QPIWS": "".join(bits),
             }
+            if self.alarm == "captured_line":
+                replies["QPIGS"] = "220.0 50.1 220.0 50.1 352 273 12 416 25.65 0 66 47.1 0.0 34.9 0 0 10010111"
+            elif self.alarm == "captured_battery":
+                replies["QPIGS"] = "1.0 0.0 228.0 50.0 469 264 15 366 25.47 0 61 45.9 0.0 34.3 0 15 10010110"
             return replies.get(command, "NAK")
 
     async def close(self) -> None:

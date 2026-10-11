@@ -34,7 +34,11 @@ export type BmsStatus = {
   mos_temperature_c?: number | null;
   raw_summary?: Record<string, unknown>;
 };
-export type Status = { connected: boolean; mode: string | null; warnings: string | null; captured_at: string | null; error: string | null; status: StatusValues; bms?: BmsStatus | null };
+export type InverterAlarm = { position: number | null; key: string; label: string; severity: "fault" | "warning" };
+export type InverterAlarms = { available: boolean; severity: "ok" | "warning" | "fault" | "unknown"; active: InverterAlarm[]; error: string | null; captured_at: string | null; mapping?: "pi30_standard" | null; last_confirmed_active?: InverterAlarm[]; last_confirmed_at?: string | null };
+export type AlarmEvent = { id: number; captured_at: string; kind: "initial" | "changed" | "unavailable" | "restored"; connected: boolean; mode: string | null; warnings: string | null; protocol_id: string | null; alarms: InverterAlarms; error: string | null; raised: string[]; cleared: string[]; cleared_alarms: InverterAlarm[]; severity_changed: string[] };
+export type AlarmHistoryResponse = { events: AlarmEvent[]; next_before_id: number | null };
+export type Status = { connected: boolean; mode: string | null; warnings: string | null; captured_at: string | null; error: string | null; status: StatusValues; bms?: BmsStatus | null; alarms?: InverterAlarms };
 export type Choice = { value: string; label: string; command: string };
 export type Capability = { key: string; label: string; warning: string; choices: Choice[] };
 export type CapabilitiesResponse = { capabilities: Capability[]; diagnostics?: Record<string, unknown> };

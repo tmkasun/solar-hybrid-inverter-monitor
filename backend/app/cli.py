@@ -10,13 +10,13 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from .capabilities import CAPABILITIES, command_for
 from .config import settings
 from .driver import BaseInverter, InverterError, SimulatorInverter, UsbHidInverter
-from .protocol import parse_rating, status_dict
+from .monitoring import read_snapshot
+from .protocol import parse_rating
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def _integer(value: str) -> int:
 
 def _inverter(args: argparse.Namespace) -> BaseInverter:
     if args.mode == "simulator":
-        return SimulatorInverter()
+        return SimulatorInverter(args.simulate_alarm)
     return UsbHidInverter(args.vendor_id, args.product_id)
 
 
@@ -40,27 +40,11 @@ def _print_fields(values: dict[str, Any]) -> None:
         print(f"{key.replace('_', ' '):30} {value if value is not None else '-'}")
 
 
-async def _read_status(inverter: BaseInverter) -> dict[str, Any]:
-    qpigs = await inverter.command("QPIGS")
-    mode = await inverter.command("QMOD")
-    warnings = await inverter.command("QPIWS")
-    replies = {"QPIGS": qpigs, "QMOD": mode, "QPIWS": warnings}
-    rejected = {command: reply for command, reply in replies.items() if reply in ("NAK", "(NAK")}
-    if rejected:
-        raise InverterError(f"inverter rejected monitoring command(s): {rejected}")
-    status = status_dict(qpigs)
-    if all(value is None for value in status.values()):
-        raise InverterError(f"unexpected QPIGS response: {qpigs!r}")
-    return {
-        "captured_at": datetime.now(timezone.utc).isoformat(),
-        "connected": True,
-        "mode": mode,
-        "status": status,
-        "warnings": warnings,
-    }
+async def _read_status(inverter: BaseInverter, protocol_id: str = "PI30") -> dict[str, Any]:
+    return await read_snapshot(inverter, protocol_id)
 
 
-async def _require_pip_protocol(inverter: BaseInverter) -> None:
+async def _require_pip_protocol(inverter: BaseInverter) -> str:
     """Confirm PIP support before issuing any status or setting command.
 
     USB ID 0665:5161 is shared by devices that use a different UPS protocol.
@@ -78,6 +62,7 @@ async def _require_pip_protocol(inverter: BaseInverter) -> None:
             f"device does not identify as a PIP inverter (QPI returned {protocol!r}); "
             "no status or setting command was sent"
         )
+    return protocol
 
 
 def _show_status(snapshot: dict[str, Any], as_json: bool) -> None:
@@ -87,6 +72,12 @@ def _show_status(snapshot: dict[str, Any], as_json: bool) -> None:
     print(f"Captured: {snapshot['captured_at']}")
     print(f"Inverter mode: {snapshot['mode']}")
     print(f"Warnings: {snapshot['warnings']}")
+    alarms = snapshot["alarms"]
+    print(f"Alarm status: {alarms['severity']}")
+    for alarm in alarms["active"]:
+        print(f"  {alarm['severity'].upper()}: {alarm['label']}")
+    if alarms["error"]:
+        print(f"  {alarms['error']}")
     values = snapshot["status"]
     _print_fields({key: value for key, value in values.items() if key != "status_flags"})
     active_flags = [flag["label"] for flag in values.get("status_flags", []) if flag["active"]]
@@ -133,6 +124,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Monitor and safely control a Sako-compatible PIP inverter.")
     parser.add_argument("--mode", choices=("simulator", "hardware"), default=settings.mode,
                         help="transport to use (default: INVERTER_MODE or %(default)s)")
+    parser.add_argument("--simulate-alarm", choices=("none", "low_battery", "overload", "fault", "unknown", "captured_line", "captured_battery"),
+                        default=settings.simulator_alarm, help="alarm scenario for simulator mode only")
     parser.add_argument("--vendor-id", type=_integer, default=settings.vendor_id,
                         help="USB vendor ID for hardware mode (default: 0x%(default)04x)")
     parser.add_argument("--product-id", type=_integer, default=settings.product_id,
@@ -175,9 +168,9 @@ async def execute(args: argparse.Namespace) -> int:
     inverter = _inverter(args)
     try:
         logger.info("Starting %s in %s mode", args.operation, args.mode)
-        await _require_pip_protocol(inverter)
+        protocol_id = await _require_pip_protocol(inverter)
         if args.operation == "status":
-            _show_status(await _read_status(inverter), args.json)
+            _show_status(await _read_status(inverter, protocol_id), args.json)
         elif args.operation == "info":
             await _show_info(inverter, args.json)
         elif args.operation == "set":
@@ -186,7 +179,7 @@ async def execute(args: argparse.Namespace) -> int:
             readings = 0
             while args.count is None or readings < args.count:
                 try:
-                    _show_status(await _read_status(inverter), args.json)
+                    _show_status(await _read_status(inverter, protocol_id), args.json)
                 except (InverterError, ValueError) as exc:
                     logger.exception("Monitor reading %d failed", readings + 1)
                     print(f"error: {exc}", file=sys.stderr)

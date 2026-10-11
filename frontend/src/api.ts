@@ -1,4 +1,4 @@
-import type { BmsSettingWriteResponse, BmsSettingsResponse, CapabilitiesResponse, DiagnosticsResponse, HistorySample, Status } from "./types";
+import type { AlarmHistoryResponse, BmsSettingWriteResponse, BmsSettingsResponse, CapabilitiesResponse, DiagnosticsResponse, HistorySample, Status } from "./types";
 let csrf = sessionStorage.getItem("sako_csrf") || "";
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}), ...init.headers }, ...init });
@@ -8,6 +8,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export type HistoryRequest = { hours: number } | { start: string; end: string };
 export const api = {
   status: () => request<Status>("/api/status"),
+  alarmHistory: (range: HistoryRequest = { hours: 24 }, beforeId?: number, signal?: AbortSignal) => {
+    const params = new URLSearchParams("hours" in range ? { hours: String(range.hours) } : range);
+    if (beforeId !== undefined) params.set("before_id", String(beforeId));
+    return request<AlarmHistoryResponse>(`/api/alarms/history?${params}`, { signal });
+  },
   capabilities: () => request<CapabilitiesResponse>("/api/capabilities"),
   history: (range: HistoryRequest = { hours: 24 }) => {
     const params = new URLSearchParams("hours" in range ? { hours: String(range.hours) } : { start: range.start, end: range.end });

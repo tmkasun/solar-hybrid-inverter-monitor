@@ -9,6 +9,7 @@ def _integer(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     mode: str = os.getenv("INVERTER_MODE", "simulator")
+    simulator_alarm: str = os.getenv("INVERTER_SIMULATOR_ALARM", "none")
     database_path: str = os.getenv("DATABASE_PATH", "data/sako.db")
     poll_seconds: float = float(os.getenv("INVERTER_POLL_SECONDS", "5"))
     discovery_retry_seconds: float = float(os.getenv("INVERTER_DISCOVERY_RETRY_SECONDS", "60"))

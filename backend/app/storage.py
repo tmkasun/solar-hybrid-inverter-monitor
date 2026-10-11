@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .alarms import alarm_event_data, alarm_signature
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +32,12 @@ class Storage:
               id INTEGER PRIMARY KEY AUTOINCREMENT, occurred_at TEXT NOT NULL, action TEXT NOT NULL,
               setting_key TEXT, old_value TEXT, new_value TEXT, result TEXT NOT NULL, detail TEXT
             );
+            CREATE TABLE IF NOT EXISTS inverter_alarm_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, captured_at TEXT NOT NULL,
+              kind TEXT NOT NULL, data TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS inverter_alarm_events_time
+              ON inverter_alarm_events(captured_at, id);
         """)
         self.connection.commit()
         logger.info("Storage initialized at %s", path)
@@ -86,6 +94,53 @@ class Storage:
         except sqlite3.Error:
             logger.exception("Failed to read audit log")
             raise
+
+    @staticmethod
+    def _alarm_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {"id": row["id"], "captured_at": row["captured_at"], "kind": row["kind"],
+                **json.loads(row["data"])}
+
+    def latest_alarm_event(self) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT * FROM inverter_alarm_events ORDER BY id DESC LIMIT 1").fetchone()
+        return self._alarm_row(row) if row else None
+
+    def record_alarm_snapshot(self, snapshot: dict[str, Any], protocol_id: str | None) -> bool:
+        """The committed event is the baseline, including after a process restart."""
+        previous = self.latest_alarm_event()
+        data = alarm_event_data(snapshot, protocol_id)
+        if previous and alarm_signature(previous) == alarm_signature(data):
+            return False
+        known = bool(snapshot["connected"] and data["alarms"]["available"])
+        previously_known = bool(previous and previous["connected"] and previous["alarms"]["available"])
+        kind = "initial" if previous is None else (
+            "unavailable" if previously_known and not known else
+            "restored" if not previously_known and known else "changed"
+        )
+        old_flags = {item["key"]: item for item in (previous or {}).get("alarms", {}).get("last_confirmed_active", [])}
+        new_flags = {item["key"]: item for item in data["alarms"]["last_confirmed_active"]}
+        # Unknown readings cannot establish that any detailed alarm has cleared.
+        data["raised"] = sorted(new_flags.keys() - old_flags.keys()) if known else []
+        data["cleared"] = sorted(old_flags.keys() - new_flags.keys()) if known else []
+        data["cleared_alarms"] = [old_flags[key] for key in data["cleared"]]
+        data["severity_changed"] = sorted(
+            key for key in old_flags.keys() & new_flags.keys()
+            if old_flags[key]["severity"] != new_flags[key]["severity"]
+        ) if known else []
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO inverter_alarm_events(captured_at, kind, data) VALUES (?, ?, ?)",
+                (snapshot["captured_at"], kind, json.dumps(data)),
+            )
+        return True
+
+    def alarm_history(self, start: str, end: str, limit: int = 50, before_id: int | None = None) -> dict[str, Any]:
+        rows = self.connection.execute(
+            "SELECT * FROM inverter_alarm_events WHERE captured_at >= ? AND captured_at <= ? "
+            "AND (? IS NULL OR id < ?) ORDER BY id DESC LIMIT ?",
+            (start, end, before_id, before_id, limit + 1),
+        ).fetchall()
+        events = [self._alarm_row(row) for row in rows[:limit]]
+        return {"events": events, "next_before_id": events[-1]["id"] if len(rows) > limit else None}
 
     def compact(self, raw_retention_days: int) -> None:
         """Roll old raw values into deterministic hourly/daily average records."""

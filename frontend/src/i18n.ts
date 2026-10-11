@@ -1,3 +1,5 @@
+import { alarmTranslations } from "./alarmTranslations";
+
 export const languageStorageKey = "sako_language";
 
 export type Language = "en" | "si" | "ta";
@@ -10,6 +12,7 @@ export const languageOptions: Array<{ value: Language; label: string; nativeLabe
 ];
 
 const en = {
+  ...alarmTranslations.en,
   "language.label": "Language",
   "app.tagline": "Local inverter monitoring and control",
   "connection.connected": "Inverter connected",
@@ -358,6 +361,7 @@ const en = {
 export type TranslationKey = keyof typeof en;
 
 const si = {
+  ...alarmTranslations.si,
   "language.label": "භාෂාව",
   "app.tagline": "දේශීය ඉන්වර්ටර් නිරීක්ෂණය සහ පාලනය",
   "connection.connected": "ඉන්වර්ටරය සම්බන්ධයි",
@@ -703,6 +707,7 @@ const si = {
 } satisfies Partial<Record<TranslationKey, string>>;
 
 const ta = {
+  ...alarmTranslations.ta,
   "language.label": "மொழி",
   "app.tagline": "உள்ளூர் இன்வெர்ட்டர் கண்காணிப்பு மற்றும் கட்டுப்பாடு",
   "connection.connected": "இன்வெர்ட்டர் இணைக்கப்பட்டது",
