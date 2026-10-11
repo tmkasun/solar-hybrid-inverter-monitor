@@ -140,8 +140,11 @@ class State:
             captured = snapshot["captured_at"]
             captured_at = datetime.fromisoformat(captured)
             if self.should_store_sample(captured_at):
-                self.storage.add_sample(latest["status"], captured)
-                self.last_stored_sample_at = captured_at
+                try:
+                    self.storage.add_sample(latest["status"], captured)
+                    self.last_stored_sample_at = captured_at
+                except sqlite3.Error:
+                    logger.exception("Unable to persist telemetry sample; live monitoring continues")
             await self.broadcast({"type": "telemetry", "data": latest})
         except (InverterError, ValueError) as exc:
             logger.exception("Inverter telemetry poll failed")

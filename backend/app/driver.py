@@ -241,9 +241,9 @@ class SimulatorInverter(BaseInverter):
                 "QFLAG": "Eabjkuvxyz", "QPIWS": "".join(bits),
             }
             if self.alarm == "captured_line":
-                replies["QPIGS"] = "220.0 50.1 220.0 50.1 352 273 12 416 25.65 0 66 47.1 0.0 34.9 0 0 10010111"
+                replies["QPIGS"] = "220.0 50.1 220.0 50.1 352 273 12 416 25.65 0 66 0471 0.0 34.9 0 0 10010111"
             elif self.alarm == "captured_battery":
-                replies["QPIGS"] = "1.0 0.0 228.0 50.0 469 264 15 366 25.47 0 61 45.9 0.0 34.3 0 15 10010110"
+                replies["QPIGS"] = "1.0 0.0 228.0 50.0 469 264 15 366 25.47 0 61 0459 0.0 34.3 0 15 10010110"
             return replies.get(command, "NAK")
 
     async def close(self) -> None:

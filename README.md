@@ -23,6 +23,58 @@ Open `http://localhost:5173`. The demo password is `admin`. The API documentatio
 
 Run the stack in containers with `docker compose -f compose.dev.yaml up --build`; browse to `http://localhost:8080`.
 
+## Installable app (PWA)
+
+The production frontend is an installable **Sako Energy** app. Serve it over
+browser-trusted HTTPS using the existing Traefik or HTTPS Nginx deployment.
+Plain HTTP on a LAN hostname/IP cannot provide PWA installation or service
+workers; `localhost` is allowed for development. The backend stays private and
+same-origin through the frontend proxy.
+
+In Chrome/Edge/Android, use **Install app** in the header when the browser offers
+installation, or use the browser's install menu. On iPhone/iPad, **Install app**
+explains how to open Safari, tap **Share**, and choose **Add to Home Screen**.
+Installed apps hide the install action and launch at `/overview`.
+
+After one successful online load, the interface and its static assets can open
+offline, including direct links to existing pages. An offline notice explains
+that live readings and device controls require a connection. Previously received
+readings are marked offline; telemetry, authentication responses, and history
+are never cached by the service worker. Device commands are never queued or
+replayed after reconnecting.
+
+New frontend builds show **Update available**, with **Update now** and **Later**.
+Update now activates the downloaded release and reloads the current page;
+it waits for active inverter/BMS changes to finish. Later keeps the current
+session running and leaves an **Update app** action in the header. A waiting
+update is offered again on the next launch. Checks run on launch, hourly while
+visible, and when the app becomes visible or reconnects. A first installation
+does not show an update banner. Existing language preferences and the current
+tab's authentication session survive the update reload.
+
+Deploy the entire newly built `frontend/dist`, including `sw.js`,
+`manifest.webmanifest`, the generated Workbox script, and `icons/`. Rebuild the
+frontend Docker image or use `scripts/deploy-ui` as usual. Apply the updated
+Nginx template when using static hosting: HTML, the manifest, service worker,
+and unversioned icons must revalidate; hashed assets can be cached long term.
+No backend change or database migration is needed. The old HTTP-only LAN
+deployment needs trusted HTTPS before installation works.
+
+To verify a release locally, run `npm run build` in `frontend`, then serve `dist`
+with `npx vite preview --host 127.0.0.1`. Normal `npm run dev` does not register a
+service worker. Open `http://localhost:4173`, verify the manifest/icons and
+worker in browser developer tools, and reload once to ensure the page is
+controlled. Keep this tab open, change visible frontend content and rebuild,
+then return to the tab to trigger a check. Verify **Later** and **Update app**,
+then **Update now**, the changed content, and the absence of another update
+banner. Browser worker update timing can require a minute between builds.
+Test an offline launch and `/analysis/fullscreen`, and confirm `/api/*` and `/ws`
+are not served from the app cache. Device installation should also be checked
+in Android Chrome and iOS Safari on the HTTPS deployment.
+
+The icon source is `frontend/public/icons/icon.svg`. Regenerate its PNG variants
+with `python3 scripts/generate-pwa-icons.py` using Pillow when changing the design.
+
 ## Command-line control
 
 The CLI talks to the inverter directly; it does not require the web stack to be running. It defaults to the safe simulator and can be run from the repository root:
@@ -73,6 +125,121 @@ sudo journalctl -b -1 --no-pager | grep -Ei 'reboot|shutdown|watchdog|thermal|th
 ```
 
 `USB inverter 0665:5161 not found` means the HID device was absent when the API probed it. The service retries inverter discovery every `INVERTER_DISCOVERY_RETRY_SECONDS`, so a temporary USB/inverter reset can recover without restarting the API.
+
+## Inverter alarms and history
+
+The `Warnings` CLI field contains the raw `QPIWS` reply: 32 flags counted from
+`a0` on the left. A `1` means the flag is active. This field includes faults as
+well as warnings; operating modes `L` (utility) and `B` (battery) do not imply
+that there are no faults. The CLI now prints named alarms and their severity.
+
+For example, `00000001000000000000000000000000` sets `a7` (inverter voltage too
+low). `00000101000010000000000000000000` additionally sets `a5` (utility supply
+unavailable) and `a12` (low battery alarm). These are standard PI30 meanings,
+from [section 2.9 of the protocol reference](https://flinenergy.com/wp-content/uploads/2025/03/RS232-Protocol-for-FlinSlim-PWM-and-MPPT-Solar-Inverters.pdf).
+Sako firmware can differ: confirm the meaning against your model's manual and
+LCD. Bit positions are not LCD error codes. The app reports inverter flags
+regardless of battery percentage or BMS readings.
+
+Faults appear in a red banner and warnings in an amber banner across app pages.
+The compact banner lists the alarm names; extra information is under **Details**.
+Press **OK** to reduce it to a muted status bar, and **Show alarms** to expand it.
+It stays collapsed through unchanged polls and expands again when alarms or
+connection reliability change. A cleared alarm returning also expands it.
+The public **Alarms** page lists state changes, including first observations,
+confirmed clearing, severity changes, loss of alarm information, and recovery.
+Unchanged polls do not add events. Disconnection or a failed alarm query retains
+the last confirmed alarms as unconfirmed; it never marks them cleared. Browser
+WebSocket reconnection retries from 2 seconds up to 30 seconds and refetches
+status when connected again.
+
+Alarm events are stored permanently in the existing SQLite database, independently
+of telemetry sampling and compaction. The table is created automatically on
+upgrade, and its latest event restores the baseline after restart. History begins
+with this feature's first poll; old telemetry does not contain alarm history.
+History refreshes every 15 seconds while visible, supports 24-hour/7-day/30-day
+filters and custom windows of up to 30 days, and can page through older events.
+Custom windows may target any past dates.
+
+The read-only API is `GET /api/alarms/history`, with `hours` (default 24, maximum
+720) or paired ISO timestamps `start` and `end`. `limit` defaults to 50 and is
+capped at 200; pass `next_before_id` back as `before_id` to retrieve the next
+page. The response contains `events` and `next_before_id`. `/api/status` and
+WebSocket telemetry retain `warnings` and add decoded `alarms`, including the
+last confirmed flags and their reading time. Failed history writes are logged
+without stopping live monitoring.
+
+### Test without changing the inverter
+
+CLI smoke tests from the repository root:
+
+```sh
+./scripts/inverter-cli --mode simulator --simulate-alarm low_battery status
+./scripts/inverter-cli --mode simulator --simulate-alarm fault status
+./scripts/inverter-cli --mode simulator --simulate-alarm captured_line status --json
+./scripts/inverter-cli --mode simulator --simulate-alarm captured_battery status --json
+```
+
+Scenarios are `none`, `low_battery`, `overload`, `fault`, `unknown`,
+`captured_line`, and `captured_battery`. The captured scenarios reproduce the
+reported alarm bits and operating measurements. No USB device is accessed in
+simulator mode.
+
+To test the app locally, after installing backend and frontend dependencies:
+
+```sh
+# Terminal 1, repository root
+DATABASE_PATH=/tmp/sako-alarm-demo.db INVERTER_MODE=simulator INVERTER_SIMULATOR_ALARM=captured_battery BMS_MODE=disabled backend/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+
+# Terminal 2
+cd frontend
+VITE_API_HOST=localhost:8000 npm run dev
+```
+
+Open `http://localhost:5173/alarms`. Expect a fault banner and three named alarms.
+Restart the demo backend with `INVERTER_SIMULATOR_ALARM=none`, using the same
+database: the banner clears and history records recovery/clearing. Restarting
+with unchanged flags should not duplicate the event. Stopping the backend
+should mark the browser's previous alarms unconfirmed until it reconnects.
+
+The container demo also accepts the scenario:
+
+```sh
+INVERTER_SIMULATOR_ALARM=captured_battery docker compose -f compose.dev.yaml up --build
+```
+
+Automated checks cover decoding, outages, recovery, persistence failures,
+restart continuity, pagination, translations, and rendered UI behavior:
+
+```sh
+DATABASE_PATH=/tmp/sako-test.db BMS_MODE=disabled backend/.venv/bin/python -m pytest backend/tests -q
+cd frontend
+npm test
+npm run build
+```
+
+### Update and verify on hardware
+
+Update the backend and UI together using your existing deployment method.
+On the Pi, run `./scripts/pi-api-install` after updating the checkout, then
+`sudo systemctl restart sako-inverter-api`. Rebuild/recreate the frontend Docker/Portainer
+deployment, or copy the newly built `frontend/dist` for a static deployment.
+Keep the existing database; no manual migration is needed.
+
+While the API service owns USB, inspect its readings without starting another
+hardware reader:
+
+```sh
+curl -sS http://127.0.0.1:8000/api/status
+curl -sS 'http://127.0.0.1:8000/api/alarms/history?hours=24&limit=50'
+sudo journalctl -u sako-inverter-api -n 50 --no-pager
+```
+
+Compare the app's named alarms and raw bits with the inverter LCD during the
+existing alarm and its natural recovery. If using the direct hardware CLI,
+stop the API first and restart it afterwards as described above. Simulator
+tests are sufficient for artificial faults; do not induce hardware faults to
+exercise the app.
 
 ## JK-BMS Bluetooth telemetry
 

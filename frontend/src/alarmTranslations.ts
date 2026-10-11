@@ -1,6 +1,11 @@
 // Stable alarm keys are shared by live status and persisted history.
 export const alarmTranslations = {
   en: {
+    "alarms.acknowledge": "OK",
+    "alarms.show": "Show alarms",
+    "alarms.details": "Details",
+    "alarms.offlineShort": "Offline — last alarms are unconfirmed.",
+    "alarms.unavailableShort": "Alarm details unavailable — last alarms are unconfirmed.",
     "route.alarms": "alarms",
     "alarms.title": "Inverter alarms",
     "alarms.ok": "No active inverter faults or warnings",
@@ -70,6 +75,11 @@ export const alarmTranslations = {
     "alarm.battery_low_to_charge": "Battery too low to charge",
   },
   si: {
+    "alarms.acknowledge": "හරි",
+    "alarms.show": "අනතුරු ඇඟවීම් පෙන්වන්න",
+    "alarms.details": "විස්තර",
+    "alarms.offlineShort": "සම්බන්ධතාව නැත — අවසන් අනතුරු ඇඟවීම් තහවුරු කර නැත.",
+    "alarms.unavailableShort": "විස්තර ලබාගත නොහැක — අවසන් අනතුරු ඇඟවීම් තහවුරු කර නැත.",
     "route.alarms": "අනතුරු ඇඟවීම්",
     "alarms.title": "ඉන්වර්ටර් අනතුරු ඇඟවීම්",
     "alarms.ok": "සක්‍රීය ඉන්වර්ටර් දෝෂ හෝ අවවාද නැත",
@@ -139,6 +149,11 @@ export const alarmTranslations = {
     "alarm.battery_low_to_charge": "ආරෝපණය කිරීමට බැටරි වෝල්ටීයතාව අඩුයි",
   },
   ta: {
+    "alarms.acknowledge": "சரி",
+    "alarms.show": "எச்சரிக்கைகளைக் காட்டு",
+    "alarms.details": "விவரங்கள்",
+    "alarms.offlineShort": "இணைப்பு இல்லை — கடைசி எச்சரிக்கைகள் உறுதிப்படுத்தப்படவில்லை.",
+    "alarms.unavailableShort": "விவரங்கள் கிடைக்கவில்லை — கடைசி எச்சரிக்கைகள் உறுதிப்படுத்தப்படவில்லை.",
     "route.alarms": "எச்சரிக்கைகள்",
     "alarms.title": "இன்வெர்ட்டர் எச்சரிக்கைகள்",
     "alarms.ok": "செயலில் இன்வெர்ட்டர் கோளாறுகள் அல்லது எச்சரிக்கைகள் இல்லை",

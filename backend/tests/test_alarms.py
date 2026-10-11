@@ -78,14 +78,15 @@ async def test_failed_warning_query_preserves_telemetry(reply):
     assert snapshot["alarms"]["error"]
 
 
-@pytest.mark.parametrize("scenario,raw,mode", [("captured_line", LINE_CAPTURE, "L"), ("captured_battery", BATTERY_CAPTURE, "B")])
-def test_cli_capture_scenarios(scenario, raw, mode, capsys):
+@pytest.mark.parametrize("scenario,raw,mode,temperature", [("captured_line", LINE_CAPTURE, "L", 47.1), ("captured_battery", BATTERY_CAPTURE, "B", 45.9)])
+def test_cli_capture_scenarios(scenario, raw, mode, temperature, capsys):
     import json
     assert main(["--mode", "simulator", "--simulate-alarm", scenario, "status", "--json"]) == 0
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["warnings"] == raw
     assert snapshot["mode"] == mode
     assert snapshot["status"]["battery_voltage"] < 26
+    assert snapshot["status"]["inverter_temperature_c"] == temperature
     assert snapshot["alarms"]["severity"] == "fault"
 
 
@@ -181,6 +182,7 @@ async def test_api_status_websocket_and_history_independent_of_sample_interval(a
 
 @pytest.mark.asyncio
 async def test_persistence_failure_does_not_advance_baseline_or_hide_live_alarms(alarm_state, monkeypatch, caplog):
+    caplog.set_level("ERROR", logger="app.main")
     state = alarm_state
     await state.poll()
     original = state.storage.record_alarm_snapshot
@@ -212,6 +214,63 @@ async def test_usb_failure_keeps_confirmed_alarms_and_recovery_clears(alarm_stat
     await state.poll()
     assert state.storage.latest_alarm_event()["kind"] == "restored"
     assert state.storage.latest_alarm_event()["cleared"] == ["battery_low"]
+
+
+@pytest.mark.asyncio
+async def test_failed_sql_insert_rolls_back_and_live_broadcast_continues(alarm_state):
+    state = alarm_state
+    await state.poll()
+    baseline = state.storage.latest_alarm_event()["id"]
+    state.storage.connection.executescript("""
+        CREATE TRIGGER reject_alarm BEFORE INSERT ON inverter_alarm_events
+        BEGIN SELECT RAISE(FAIL, 'simulated write failure'); END;
+    """)
+    state.inverter.alarm = "low_battery"
+    await state.poll()
+    assert state.latest["alarms"]["severity"] == "warning"
+    assert state.storage.latest_alarm_event()["id"] == baseline
+    assert not state.storage.connection.in_transaction
+    state.storage.connection.execute("DROP TRIGGER reject_alarm")
+    await state.poll()
+    assert state.storage.latest_alarm_event()["raised"] == ["battery_low"]
+
+
+@pytest.mark.asyncio
+async def test_full_database_failure_does_not_suppress_broadcast(alarm_state, monkeypatch):
+    state = alarm_state
+    messages = []
+    async def broadcast(message):
+        messages.append(message)
+    def fail(*args):
+        raise sqlite3.OperationalError("database locked")
+    state.broadcast = broadcast
+    monkeypatch.setattr(state.storage, "record_alarm_snapshot", fail)
+    monkeypatch.setattr(state.storage, "add_sample", fail)
+    state.inverter.alarm = "captured_battery"
+    await state.poll()
+    assert messages[0]["data"]["connected"]
+    assert messages[0]["data"]["alarms"]["severity"] == "fault"
+    assert state.last_stored_sample_at is None
+
+
+@pytest.mark.asyncio
+async def test_state_startup_restores_unconfirmed_alarms_without_duplicate_events(alarm_state):
+    state = alarm_state
+    state.inverter.alarm = "captured_battery"
+    await state.poll()
+    restored = main_module.State()
+    try:
+        assert not restored.latest["connected"]
+        assert [alarm["key"] for alarm in restored.latest["alarms"]["last_confirmed_active"]] == ["line_fail", "output_voltage_low", "battery_low"]
+        restored.diagnostics = {"QPI": "PI30"}
+        restored.inverter.alarm = "captured_battery"
+        await restored.poll()
+        assert restored.storage.latest_alarm_event()["id"] == state.storage.latest_alarm_event()["id"]
+        restored.inverter.alarm = "none"
+        await restored.poll()
+        assert restored.storage.latest_alarm_event()["cleared"] == ["battery_low", "line_fail", "output_voltage_low"]
+    finally:
+        restored.storage.close()
 
 
 def test_history_time_filters(tmp_path):

@@ -1,7 +1,10 @@
 import type { AlarmHistoryResponse, BmsSettingWriteResponse, BmsSettingsResponse, CapabilitiesResponse, DiagnosticsResponse, HistorySample, Status } from "./types";
+import { createI18n, storedLanguage } from "./i18n";
 let csrf = sessionStorage.getItem("sako_csrf") || "";
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}), ...init.headers }, ...init });
+  const deviceWrite = init.method === "POST" && /^\/api\/(?:settings|bms\/settings)\//.test(path);
+  if (deviceWrite && !navigator.onLine) throw new Error(createI18n(storedLanguage()).t("pwa.offlineDetail"));
+  const response = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}), ...init.headers }, ...init, cache: "no-store" });
   if (!response.ok) throw new Error((await response.json().catch(() => ({ detail: response.statusText }))).detail || response.statusText);
   return response.json() as Promise<T>;
 }

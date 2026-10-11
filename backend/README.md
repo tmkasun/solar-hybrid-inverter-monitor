@@ -97,6 +97,15 @@ BMS_BLE_DEBUG_SCAN_SECONDS=5
 `INVERTER_POLL_SECONDS` controls live telemetry reads and WebSocket updates.
 `INVERTER_DB_SAMPLE_SECONDS` controls how often successful telemetry is saved
 to history.
+Alarm transitions are recorded on every inverter poll, regardless of this
+sampling interval. `GET /api/status` includes decoded `alarms`, and the public
+`GET /api/alarms/history` endpoint returns persisted transitions. Alarm events
+are retained permanently and are not affected by raw telemetry compaction.
+The new SQLite table is created automatically; keep the existing database.
+For simulator testing, set `INVERTER_SIMULATOR_ALARM` to `low_battery`, `overload`,
+`fault`, `unknown`, `captured_line`, `captured_battery`, or `none` (default).
+This setting is ignored in hardware mode. See the repository README for the
+app test and hardware acceptance steps.
 `BMS_MODE` can be `disabled`, `simulator`, or `jkbms`. For hardware BMS reads,
 first run `../scripts/bms-cli scan --json`, then verify with
 `../scripts/bms-cli status --address <address> --protocol JK02 --json`.

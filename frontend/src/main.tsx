@@ -7,6 +7,7 @@ import { api } from "./api";
 import { alarmLabel, alarmSummary, InverterAlerts } from "./InverterAlerts";
 import { AlarmHistory } from "./AlarmHistory";
 import { startStatusStream } from "./statusStream";
+import { PwaActions, PwaNotices, usePwa } from "./Pwa";
 import type { HistoryRequest } from "./api";
 import { createI18n, groupLabel, languageOptions, languageStorageKey, metricLabel, normalizeLanguage, settingChoiceLabel, settingDetailLabel, settingResetLabel, settingTitleLabel, settingWarningLabel, statusFlagDescription, statusFlagLabel, storedLanguage } from "./i18n";
 import type { I18n, Language, TranslationKey } from "./i18n";
@@ -23,7 +24,6 @@ function App() {
   const i18n = useMemo(() => createI18n(language), [language]);
   const [receivedStatus, setStatus] = useState<Status | null>(null);
   const [streamStale, setStreamStale] = useState(true);
-  const status = receivedStatus && streamStale ? { ...receivedStatus, connected: false } : receivedStatus;
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<Record<string, unknown>>({});
   const [password, setPassword] = useState("");
@@ -31,6 +31,9 @@ function App() {
   const [authenticating, setAuthenticating] = useState(false);
   const [message, setMessage] = useState("");
   const [pendingSetting, setPendingSetting] = useState<PendingSetting>(null);
+  const [bmsWritePending, setBmsWritePending] = useState(false);
+  const pwa = usePwa(Boolean(pendingSetting) || bmsWritePending || authenticating);
+  const status = receivedStatus && (streamStale || !pwa.online) ? { ...receivedStatus, connected: false } : receivedStatus;
 
   const load = async () => {
     try {
@@ -105,7 +108,9 @@ function App() {
   };
 
   return <main className={graphFullPage ? "full-page-shell" : ""}>
-    {!graphFullPage && <header><div><h1>Sako Energy</h1><p>{i18n.t("app.tagline")}</p></div><div className="header-actions"><label className="language-select"><span>{i18n.t("language.label")}</span><select value={language} onChange={event => setLanguage(normalizeLanguage(event.target.value))}>{languageOptions.map(option => <option key={option.value} value={option.value}>{option.nativeLabel}</option>)}</select></label><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? i18n.t("connection.connected") : i18n.t("connection.offline")}</div></div></header>}
+    {!graphFullPage && <header><div><h1>Sako Energy</h1><p>{i18n.t("app.tagline")}</p></div><div className="header-actions"><label className="language-select"><span>{i18n.t("language.label")}</span><select value={language} onChange={event => setLanguage(normalizeLanguage(event.target.value))}>{languageOptions.map(option => <option key={option.value} value={option.value}>{option.nativeLabel}</option>)}</select></label><div className={`connection ${status?.connected ? "ok" : "offline"}`}>{status?.connected ? i18n.t("connection.connected") : i18n.t("connection.offline")}</div><PwaActions pwa={pwa} i18n={i18n} /></div></header>}
+    {graphFullPage && (pwa.canInstall || (pwa.needRefresh && pwa.deferred)) && <div className="pwa-fullscreen-actions"><PwaActions pwa={pwa} i18n={i18n} /></div>}
+    <PwaNotices pwa={pwa} i18n={i18n} />
     {!graphFullPage && <nav>{appRoutes.map(route => <NavLink key={route.path} to={route.path} className={({ isActive }) => isActive ? "active" : ""}>{i18n.t(route.labelKey)}</NavLink>)}</nav>}
     {message && <div className="notice">{message}<button onClick={() => setMessage("")}>×</button></div>}
     <InverterAlerts status={status} i18n={i18n} />
@@ -115,7 +120,7 @@ function App() {
       <Route path="/alarms" element={<AlarmHistory status={status} i18n={i18n} />} />
       <Route path="/analysis" element={<DataAnalysis i18n={i18n} />} />
       <Route path="/analysis/fullscreen" element={<DataAnalysis fullPage i18n={i18n} />} />
-      <Route path="/settings" element={<Settings authenticated={authenticated} authenticating={authenticating} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} onMessage={setMessage} i18n={i18n} />} />
+      <Route path="/settings" element={<fieldset className="device-settings" disabled={!pwa.online || pwa.updating}><Settings authenticated={authenticated} authenticating={authenticating} capabilities={capabilities} currentSettings={currentSettings} pendingSetting={pendingSetting} login={login} password={password} setPassword={setPassword} logout={logout} onChange={applySetting} onResetDefaults={resetDefaults} onMessage={setMessage} onBmsWritePending={setBmsWritePending} i18n={i18n} /></fieldset>} />
       <Route path="/diagnostics" element={<Diagnostics authenticated={authenticated} i18n={i18n} />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
@@ -1323,14 +1328,14 @@ const priorityAliases: Record<string, Record<string, string>> = {
   charger_source_priority: { "0": "utility", "00": "utility", utility: "utility", "1": "solar_first", "01": "solar_first", solar_first: "solar_first", "2": "solar_utility", "02": "solar_utility", solar_utility: "solar_utility", "3": "solar", "03": "solar", solar: "solar" },
 };
 
-function Settings({ authenticated, authenticating, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, onMessage, i18n }: { authenticated: boolean; authenticating: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void>; onMessage: (message: string) => void } & I18nProps) {
+function Settings({ authenticated, authenticating, capabilities, currentSettings, pendingSetting, login, password, setPassword, logout, onChange, onResetDefaults, onMessage, onBmsWritePending, i18n }: { authenticated: boolean; authenticating: boolean; capabilities: Capability[]; currentSettings: CurrentSettings; pendingSetting: PendingSetting; login: (event: FormEvent) => Promise<void>; password: string; setPassword: (v: string) => void; logout: () => Promise<void>; onChange: (key: string, value: string) => Promise<void>; onResetDefaults: () => Promise<void>; onMessage: (message: string) => void; onBmsWritePending: (pending: boolean) => void } & I18nProps) {
   if (!authenticated) return <section className="panel login"><h2>{i18n.t("settings.adminSignIn")}</h2><p>{i18n.t("settings.signInRequired")}</p><form onSubmit={login} aria-busy={authenticating}><input type="password" required value={password} disabled={authenticating} onChange={e => setPassword(e.target.value)} placeholder={i18n.t("settings.password")}/><button disabled={authenticating}>{authenticating && <i className="spinner" aria-hidden="true" />}{authenticating ? i18n.t("settings.authenticating") : i18n.t("settings.signIn")}</button></form></section>;
   const resetDisabled = Boolean(pendingSetting) || capabilities.length === 0;
   return <section className="settings-page">
     <div className="section-title"><div><h2>{i18n.t("settings.title")}</h2><p>{i18n.t("settings.subtitle")}</p></div><div className="settings-actions"><button className="quiet danger" disabled={resetDisabled} onClick={() => void onResetDefaults()}>{pendingSetting ? i18n.t("settings.applying") : i18n.t("settings.resetDefaults")}</button><button className="quiet" onClick={() => void logout()}>{i18n.t("settings.signOut")}</button></div></div>
     {capabilities.length === 0 && <div className="panel settings-empty"><b>{i18n.t("settings.noPriorities")}</b><p>{i18n.t("settings.noPrioritiesDetail")}</p></div>}
     {capabilities.map(capability => <SettingCard key={capability.key} capability={capability} currentValue={currentSettings[capability.key]} pendingSetting={pendingSetting} onChange={onChange} i18n={i18n} />)}
-    <BmsSettingsPanel onMessage={onMessage} i18n={i18n} />
+    <BmsSettingsPanel onMessage={onMessage} onWritePending={onBmsWritePending} i18n={i18n} />
   </section>;
 }
 
@@ -1351,7 +1356,7 @@ function SettingCard({ capability, currentValue, pendingSetting, onChange, i18n 
           const applying = pendingSetting?.key === capability.key && pendingSetting.value === choice.value;
           const choiceLabel = settingChoiceLabel(i18n, capability.key, choice.value, choice.label);
           const description = settingDetailLabel(i18n, capability.key, choice.value);
-          return <button key={choice.value} className={`choice-card ${selected ? "selected" : ""}`} disabled={pendingForCard} onClick={() => { if (window.confirm(i18n.t("confirm.applyChoice", { warning: capabilityWarning, choice: choiceLabel }))) void onChange(capability.key, choice.value); }}>
+          return <button key={choice.value} className={`choice-card ${selected ? "selected" : ""}`} disabled={Boolean(pendingSetting)} onClick={() => { if (window.confirm(i18n.t("confirm.applyChoice", { warning: capabilityWarning, choice: choiceLabel }))) void onChange(capability.key, choice.value); }}>
             <span>{choiceLabel}</span>
             {applying && <i className="spinner" aria-label={i18n.t("settings.applying")} />}
             <small>{description}</small>
@@ -1365,7 +1370,7 @@ function SettingCard({ capability, currentValue, pendingSetting, onChange, i18n 
 
 const bmsSettingCategories: BmsSettingCategory[] = ["electrical", "temperature", "balancing", "system", "switches"];
 
-function BmsSettingsPanel({ onMessage, i18n }: { onMessage: (message: string) => void } & I18nProps) {
+function BmsSettingsPanel({ onMessage, onWritePending, i18n }: { onMessage: (message: string) => void; onWritePending: (pending: boolean) => void } & I18nProps) {
   const [data, setData] = useState<BmsSettingsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingKey, setPendingKey] = useState("");
@@ -1389,6 +1394,7 @@ function BmsSettingsPanel({ onMessage, i18n }: { onMessage: (message: string) =>
     const label = bmsSettingValueLabel(spec, value, data?.cell_count || spec.cell_count || 1, i18n);
     if (!window.confirm(i18n.t("confirm.applyBmsSetting", { setting: bmsSettingTitle(spec.key, spec.label), value: label }))) return;
     setPendingKey(spec.key);
+    onWritePending(true);
     try {
       const result = await api.changeBmsSetting(spec.key, value);
       setData(result.settings);
@@ -1398,6 +1404,7 @@ function BmsSettingsPanel({ onMessage, i18n }: { onMessage: (message: string) =>
       setError(e instanceof Error ? e.message : i18n.t("bmsSettings.changeError"));
     } finally {
       setPendingKey("");
+      onWritePending(false);
     }
   };
 

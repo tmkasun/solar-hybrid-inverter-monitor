@@ -1,4 +1,5 @@
 import { alarmTranslations } from "./alarmTranslations";
+import { pwaTranslations } from "./pwaTranslations";
 
 export const languageStorageKey = "sako_language";
 
@@ -13,6 +14,7 @@ export const languageOptions: Array<{ value: Language; label: string; nativeLabe
 
 const en = {
   ...alarmTranslations.en,
+  ...pwaTranslations.en,
   "language.label": "Language",
   "app.tagline": "Local inverter monitoring and control",
   "connection.connected": "Inverter connected",
@@ -362,6 +364,7 @@ export type TranslationKey = keyof typeof en;
 
 const si = {
   ...alarmTranslations.si,
+  ...pwaTranslations.si,
   "language.label": "භාෂාව",
   "app.tagline": "දේශීය ඉන්වර්ටර් නිරීක්ෂණය සහ පාලනය",
   "connection.connected": "ඉන්වර්ටරය සම්බන්ධයි",
@@ -708,6 +711,7 @@ const si = {
 
 const ta = {
   ...alarmTranslations.ta,
+  ...pwaTranslations.ta,
   "language.label": "மொழி",
   "app.tagline": "உள்ளூர் இன்வெர்ட்டர் கண்காணிப்பு மற்றும் கட்டுப்பாடு",
   "connection.connected": "இன்வெர்ட்டர் இணைக்கப்பட்டது",

@@ -24,6 +24,8 @@
     "@types/react-dom": "18.3.5",
     "@types/three": "^0.185.4",
     "jsdom": "25.0.1",
-    "vitest": "2.1.8"
+    "vite-plugin-pwa": "1.2.0",
+    "vitest": "2.1.8",
+    "workbox-window": "7.4.0"
   }
 }

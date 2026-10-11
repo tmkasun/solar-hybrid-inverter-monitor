@@ -79,6 +79,7 @@ def retain_confirmed_alarms(snapshot: dict[str, Any], previous: dict[str, Any] |
     """Keep last confirmed details separate from an unavailable current reading."""
     previous = previous or {}
     alarms = dict(snapshot.get("alarms") or decode_alarms(None, snapshot.get("mode")))
+    alarms.setdefault("captured_at", snapshot.get("captured_at"))
     if snapshot.get("connected") and alarms["available"]:
         alarms["last_confirmed_active"] = list(alarms["active"])
         alarms["last_confirmed_at"] = alarms.get("captured_at") or snapshot.get("captured_at")
@@ -100,6 +101,7 @@ def alarm_signature(data: dict[str, Any]) -> tuple:
     """Ignore measurement time, mode-only changes and varying transport errors."""
     alarms = data["alarms"]
     reported = alarms["active"] if data["connected"] else []
-    flags = lambda items: tuple(sorted((item["key"], item["severity"]) for item in items))
+    def flags(items: list[dict[str, Any]]) -> tuple:
+        return tuple(sorted((item["key"], item["severity"]) for item in items))
     return (bool(data["connected"] and alarms["available"]), flags(reported),
             flags(alarms["last_confirmed_active"]), data.get("protocol_id"))

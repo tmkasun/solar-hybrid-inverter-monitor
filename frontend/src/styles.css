@@ -5,8 +5,8 @@
 }
 
 .inverter-alert {
-    margin: 0 0 18px;
-    padding: 18px 20px;
+    margin: 0 0 14px;
+    padding: 12px 16px;
     border: 1px solid #e7b854;
     border-left: 5px solid #e7b854;
     border-radius: 12px;
@@ -20,12 +20,21 @@
     color: #ffd0d0;
 }
 
-.inverter-alert h2 { margin: 0 0 10px; font-size: 1.2rem; }
+.inverter-alert h2 { margin: 0; font-size: 1rem; }
 .inverter-alert p { margin: 8px 0; }
 .inverter-alert li { margin: 6px 0; }
 .inverter-alert code { display: block; overflow-wrap: anywhere; margin-top: 8px; }
 .inverter-alert summary { cursor: pointer; }
-.inverter-alert a { display: inline-block; margin-top: 12px; color: inherit; }
+.inverter-alert a { color: inherit; font-size: .85rem; }
+.inverter-alert-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.inverter-alert-actions { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+.inverter-alert-actions button { padding: 6px 12px; min-height: 32px; color: inherit; border: 1px solid currentColor; background: transparent; }
+.inverter-alert-count, .inverter-alert-state { font-size: .85rem; font-weight: normal; }
+.inverter-alert-summary { font-size: .9rem; line-height: 1.5; }
+.inverter-alert-details { font-size: .85rem; margin-top: 8px; }
+.inverter-alert.collapsed { padding: 8px 12px; border-width: 1px; border-left-width: 2px; background: #18242c; color: #bdcbd3; }
+.inverter-alert.collapsed.fault { border-color: #975b60; }
+.inverter-alert.collapsed.warning { border-color: #8d784a; }
 .alarm-filters, .alarm-filters form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
 .alarm-filters label { display: grid; gap: 6px; }
 .alarm-filters input, .alarm-filters select { padding: 10px; border: 1px solid #44565f; border-radius: 8px; color: #e7edf2; background: #182a34; color-scheme: dark; }
@@ -44,6 +53,21 @@
 
 html {
     min-width: 320px;
+}
+
+.device-settings { border: 0; padding: 0; margin: 0; min-width: 0; }
+.pwa-notices:empty { display: none; }
+.pwa-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin: 16px 0; padding: 16px; border: 1px solid #45606f; border-radius: 10px; background: #172832; }
+.pwa-banner > div:first-child { flex: 1 1 260px; }
+.pwa-banner p { margin: 6px 0 0; line-height: 1.5; color: #bdcbd3; }
+.pwa-banner .error { color: #ffb8bf; }
+.pwa-update { border-color: #479b78; }
+.pwa-offline { border-color: #a88742; }
+.pwa-banner-actions, .pwa-fullscreen-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pwa-fullscreen-actions { justify-content: flex-end; }
+.pwa-action { white-space: normal; }
+@supports (padding: max(0px)) {
+    main, main.full-page-shell { padding-top: max(16px, env(safe-area-inset-top)); padding-right: max(14px, env(safe-area-inset-right)); padding-bottom: max(28px, env(safe-area-inset-bottom)); padding-left: max(14px, env(safe-area-inset-left)); }
 }
 
 body {
